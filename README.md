@@ -10,12 +10,14 @@ In a zone, press **F3** to open and close the mod menu. Escape closes it.
 
 2. Start the game once, wait until the main menu, then close it. MelonLoader generates its files on that first launch.
 
-3. Download `LastEpoch_Hud.zip` from the [latest release](https://github.com/Syncingoutt/LastEpoch_Mods/releases). Copy its contents into the game `Mods` folder. You should have:
+3. From the [latest release](https://github.com/Syncingoutt/LastEpoch_Mods/releases), download `LastEpoch_Hud.dll` and `LastEpoch_Hud.zip`. They are separate files. Put the DLL directly in the game `Mods` folder. Unzip `LastEpoch_Hud.zip` into that same `Mods` folder. You should have:
 
    ```text
    <Last Epoch>\Mods\LastEpoch_Hud.dll
    <Last Epoch>\Mods\LastEpoch_Hud
    ```
+
+   The DLL stays next to the `LastEpoch_Hud` folder, not inside it.
 
 4. If the mod is listed but never runs, or `MelonLoader\Latest.log` says `BadImageFormatException` or `No Support Module Loaded`, close the game. Download `UnityEngine.CoreModule.dll` from the same release and replace:
 
