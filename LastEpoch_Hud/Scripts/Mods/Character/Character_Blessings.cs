@@ -127,7 +127,6 @@ namespace LastEpoch_Hud.Scripts.Mods.Character
             Il2CppLE.Data.BlessingData result = new Il2CppLE.Data.BlessingData
             {
                 SubtypeId = subtype,
-                //ImplicitValue = UnityEngine.Random.Range(0f, 1f),
                 ImplicitRollByte0 = (byte)UnityEngine.Random.Range(0f, 255f),
                 ImplicitRollByte1 = (byte)UnityEngine.Random.Range(0f, 255f),
                 ImplicitRollByte2 = (byte)UnityEngine.Random.Range(0f, 255f)
@@ -198,21 +197,10 @@ namespace LastEpoch_Hud.Scripts.Mods.Character
                     timelines_id.Add(TimelineID.Gaspar);
                     timelines_id.Add(TimelineID.Heorot);
                     timelines_id.Add(TimelineID.Volcano);
-
-
+                    
                     if (BlessingRewardPanelManager.instance.IsNullOrDestroyed())
                     {
-                        foreach (BlessingRewardPanelManager brp in Resources.FindObjectsOfTypeAll<BlessingRewardPanelManager>())
-                        {
-                            if (!brp.IsNullOrDestroyed())
-                            {
-                                GameObject blessing_go = Object.Instantiate(brp.gameObject, Vector3.zero, Quaternion.identity);
-                                break;
-                            }
-                        }
-                        
-                        //BlessingRewardPanelManager.instance.OnOptionsPopulated(TimelineID.UndeadAbom, 0, 3);
-                        //BlessingRewardPanelManager.onOptionsPopulated(TimelineID.UndeadAbom, 0, 3);
+                        BlessingRewardPanelManager.instance?.OnOptionsPopulated(TimelineID.UndeadAbom, 0, 3);
                     }
                     if (!BlessingRewardPanelManager.instance.IsNullOrDestroyed())
                     {

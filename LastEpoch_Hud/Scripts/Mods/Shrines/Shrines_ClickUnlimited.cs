@@ -29,9 +29,9 @@ namespace LastEpoch_Hud.Scripts.Mods.Shrines
                         GameObject copy = GameObject.Instantiate(__instance.gameObject);
                         Vector3 position = __instance.gameObject.transform.position;
                         Object.Destroy(__instance.gameObject);
-                        ShrinePlacementManager shrine_placement_manager = GameObject.FindObjectOfType<ShrinePlacementManager>();
-                        if (!shrine_placement_manager.IsNullOrDestroyed()) { shrine_placement_manager.PlaceNewShrine(copy, position); }
-                        else { Main.logger_instance?.Error("ShrinePlacementManager not Found"); }
+                        ShrinesManager shrine_placement_manager = GameObject.FindObjectOfType<ShrinesManager>();
+                        if (!shrine_placement_manager.IsNullOrDestroyed()) { shrine_placement_manager.PlaceNewShrine(0, position); }
+                        else { Main.logger_instance?.Error("ShrinesManager not Found"); }
                     }
                 }
             }

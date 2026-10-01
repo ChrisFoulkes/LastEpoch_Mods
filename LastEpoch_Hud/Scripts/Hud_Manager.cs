@@ -1,23 +1,13 @@
 ﻿using HarmonyLib;
 using Il2Cpp;
 using Il2CppLE.Data;
-using Il2CppLE.Tools;
-using Il2CppLE.UI.Bazaar;
-using Il2CppNetworking.Multiplayer.Interactables.Portals;
-using Il2CppOperationResult;
-using Il2CppRewired.Components; //Gamepad
+using Il2CppRewired.Components;
 using Il2CppSystem.Collections.Generic;
-using Il2CppTMPro;
-using LastEpoch_Hud.Scripts.Mods.Maxroll;
-using LastEpoch_Hud.Scripts.Mods.NewItems;
 using MelonLoader;
-using Newtonsoft.Json;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices; //Gamepad
+using System.Runtime.InteropServices;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace LastEpoch_Hud.Scripts
@@ -40,20 +30,19 @@ namespace LastEpoch_Hud.Scripts
         private bool hud_initializing = false;
         private bool data_initializing = false;
 
-        private bool updating = false;        
-        public static bool enable = false; //Used to wait loading (Fix_PlayerLoopHelper)        
+        private bool updating = false;
+        private float nextPauseMenuProbe = 0f;
+        private bool exit = false;
+        public static bool enable = false; //Used to wait loading (Fix_PlayerLoopHelper)
+        public static readonly KeyCode MenuKey = KeyCode.F3;
+        public static bool mod_menu_open = false;
 
-#if WINGAMEPAD
+        //Gamepad
         public static PlayerMouse virtual_mouse = null;
         [DllImport("user32.dll", CharSet = CharSet.Auto, CallingConvention = CallingConvention.StdCall)]
         public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
         private const int MOUSEEVENTF_LEFTDOWN = 0x02;
         private const int MOUSEEVENTF_LEFTUP = 0x04;
-
-#endif
-#if KEYBOARD
-        private bool exit = false;
-#endif
 
         void Awake()
         {
@@ -62,12 +51,19 @@ namespace LastEpoch_Hud.Scripts
             AssetBundleCreateRequest bundleLoadRequest = AssetBundle.LoadFromFileAsync(Path.Combine(asset_path, asset_bundle_name));
             asset_bundle = bundleLoadRequest.assetBundle;
             if (asset_bundle == null) { Main.logger_instance.Error("AssetBundle Error"); }
-            else { Object.DontDestroyOnLoad(asset_bundle); }            
+            else { Object.DontDestroyOnLoad(asset_bundle); }
         }
         void Update()
         {
             if (!asset_bundle.IsNullOrDestroyed())
             {
+                if (!Scenes.IsGameScene()) { mod_menu_open = false; }
+                else if (!hud_object.IsNullOrDestroyed())
+                {
+                    if (Input.GetKeyDown(MenuKey)) { mod_menu_open = !mod_menu_open; }
+                    if (mod_menu_open && Input.GetKeyDown(KeyCode.Escape)) { mod_menu_open = false; }
+                }
+
                 Update_Hud_Scale();
                 Update_Refs();
                 Update_Locale();
@@ -75,59 +71,53 @@ namespace LastEpoch_Hud.Scripts
                 if (!hud_object.IsNullOrDestroyed())
                 {
                     if ((!data_initialized) && (!data_initializing)) { Init_UserData(); } //set once
-                    if ((IsPauseOpen()) && (!updating))
+                    if ((IsPauseOpen() || mod_menu_open) && (!updating))
                     {
                         updating = true;
                         Update_Hud_Content();
-                        if (!hud_object.active) { Mods.Fixs.Fix_HudFpsCap.SetHudCapActive(true); }
                         hud_object.active = true;
                         Content.Set_Active();
-
                         if (!Refs_Manager.epoch_input_manager.IsNullOrDestroyed())
                         {
-#if KEYBOARD
-                            if (!Refs_Manager.epoch_input_manager.forceDisableInput) { Refs_Manager.epoch_input_manager.forceDisableInput = true; }
-                        }
-                        if (Input.GetKeyDown(KeyCode.Escape)) { exit = true; }
-                        if (!Hud_Base.Btn_Resume.IsNullOrDestroyed())
-                        {
-                            if ((Input.GetKeyUp(KeyCode.Escape)) && (exit))
+                            if (!Refs_Manager.epoch_input_manager.isControllerActive) //Keyboard
                             {
-                                Hud_Base.Btn_Resume.onClick.Invoke();
-                                exit = false;
+                                if (!Refs_Manager.epoch_input_manager.forceDisableInput) { Refs_Manager.epoch_input_manager.forceDisableInput = true; }
+                                if (!Hud_Base.Btn_Resume.IsNullOrDestroyed())
+                                {
+                                    if (Input.GetKeyDown(KeyCode.Escape)) { exit = true; }
+                                    if ((Input.GetKeyUp(KeyCode.Escape)) && (exit)) { Hud_Base.Btn_Resume.onClick.Invoke(); exit = false; }
+                                }
+                            }
+                            else //Controller
+                            {
+                                if (Refs_Manager.epoch_input_manager.forceDisableInput) { Refs_Manager.epoch_input_manager.forceDisableInput = false; }
+                                if (virtual_mouse.IsNullOrDestroyed()) { virtual_mouse = null; }
+                                if ((Input.GetKeyDown(KeyCode.Joystick1Button0)) && (!virtual_mouse.IsNullOrDestroyed())) //A
+                                {
+                                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                                    {
+                                        mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, (uint)virtual_mouse.screenPosition.x, (uint)virtual_mouse.screenPosition.y, 0, 0);
+                                    }
+                                    else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                                    {
+                                        
+                                    }
+                                    else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                                    {
+                                        
+                                    }
+                                }
                             }
                         }
-#endif
-#if WINGAMEPAD
-                            if (Refs_Manager.epoch_input_manager.forceDisableInput) { Refs_Manager.epoch_input_manager.forceDisableInput = false; }
-                            if (virtual_mouse.IsNullOrDestroyed()) { virtual_mouse = Refs_Manager.epoch_input_manager.virtualMouse; }
-                        }
-                        if (Content.OdlForceDrop.enable)
-                        {
-                            VirtualKeyboard.instance.MoveTo(Content.OdlForceDrop.center_content_1, Content.OdlForceDrop.shards_filter_name);
-                        }
-                        if (Input.GetKeyDown(KeyCode.Joystick1Button0)) //A
-                        {
-                            GameObject selected = EventSystem.current?.currentSelectedGameObject;
-                            if (!selected.IsNullOrDestroyed())
-                            {
-                                ExecuteEvents.Execute(selected, new BaseEventData(EventSystem.current), ExecuteEvents.submitHandler);
-                            }
-                            else if (!virtual_mouse.IsNullOrDestroyed() && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                            {
-                                mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, (uint)virtual_mouse.screenPosition.x, (uint)virtual_mouse.screenPosition.y, 0, 0);
-                            }
-                        }
-#endif
                         updating = false;
                     }
                     else if (!updating)
                     {
                         updating = true;
-                        if (hud_object.active) { hud_object.active = false; Mods.Fixs.Fix_HudFpsCap.SetHudCapActive(false); }
+                        if (hud_object.active) { hud_object.active = false; }
                         if (!Refs_Manager.epoch_input_manager.IsNullOrDestroyed())
                         {
-                            if (Refs_Manager.epoch_input_manager.forceDisableInput) { Refs_Manager.epoch_input_manager.forceDisableInput = false; }
+                            if (Refs_Manager.epoch_input_manager.forceDisableInput) { Refs_Manager.epoch_input_manager.forceDisableInput = false; }                            
                         }
                         Content.Character.need_update = true;
                         updating = false;
@@ -146,7 +136,7 @@ namespace LastEpoch_Hud.Scripts
                 {
                     if ((Functions.Check_Prefab(name)) && (name.Contains("/hud/")) && (name.Contains("hud.prefab")))
                     {
-                        if (Main.debug) { Main.logger_instance.Msg("Hud Manager : Hud prefab found"); }
+                        if (Main.debug) { Main.logger_instance.Msg("Hud Manager : Dhud prefab found"); }
                         asset_name = name;
                         break;
                     }
@@ -183,25 +173,14 @@ namespace LastEpoch_Hud.Scripts
                         Content.Scenes.Set_Active(false);
 
                         Content.Skills.Get_Refs();
-                        Content.Skills.Set_Events();
                         Content.Skills.Set_Active(false);
 
                         Content.OdlForceDrop.Get_Refs();
-                        Content.OdlForceDrop.Init_BeastDropdown();
                         Content.OdlForceDrop.Set_Events();
                         Content.OdlForceDrop.Set_Active(false);
 
-                        Content.NewItems.Get_Refs();
-                        Content.NewItems.Init_Dropdowns();
-                        Content.NewItems.Set_Events();
-                        Content.NewItems.Set_Active(false);
-
-                        Content.Maxroll.Get_Refs();
-                        Content.Maxroll.Set_Events();
-                        Content.Maxroll.Set_Active(false);
-
-                        try { ModUI.SaveManager.BindHud(hud_object); }
-                        catch (System.Exception ex) { Main.logger_instance?.Error("ModUI BindHud failed: " + ex.Message); }
+                        Content.Headhunter.Get_Refs();
+                        Content.Headhunter.Set_Active(false);
                     }
                     else { Main.logger_instance.Error("Hud Manager : Hud Prefab not found"); }
                 }
@@ -242,8 +221,8 @@ namespace LastEpoch_Hud.Scripts
                 bool items = Content.Items.Init_UserData();
                 bool scenes = Content.Scenes.Init_UserData();
                 bool skills = Content.Skills.Init_UserData();
-                bool new_items = Content.NewItems.Init_Data();
-                if ((character) && (items) && (scenes) && (skills) && (new_items))
+                bool headhunter = Content.Headhunter.Init_Data();
+                if ((character) && (items) && (scenes) && (skills)) // && (headhunter))
                 {
                     if (Main.debug) { Main.logger_instance.Msg("Hud Manager : Initialized"); }
                     data_initialized = true;
@@ -257,6 +236,14 @@ namespace LastEpoch_Hud.Scripts
             if (!Refs_Manager.game_uibase.IsNullOrDestroyed())
             {
                 if ((game_canvas.IsNullOrDestroyed()) && (Refs_Manager.game_uibase.canvases.Count > 0)) { game_canvas = Refs_Manager.game_uibase.canvases[0]; }
+                if ((game_pause_menu.IsNullOrDestroyed()) || (Hud_Base.Default_PauseMenu_Btns.IsNullOrDestroyed()))
+                {
+                    if (UnityEngine.Time.unscaledTime >= nextPauseMenuProbe)
+                    {
+                        nextPauseMenuProbe = UnityEngine.Time.unscaledTime + 1f;
+                        Hud_Base.Get_DefaultPauseMenu();
+                    }
+                }
                 if ((!Hud_Base.initiliazed_events) && (!game_pause_menu.IsNullOrDestroyed()) && (!Hud_Base.Default_PauseMenu_Btns.IsNullOrDestroyed())) { Hud_Base.Set_Events(); }
                 if (Hud_Base.Get_DefaultPauseMenu_Open()) { Hud_Base.Toogle_DefaultPauseMenu(false); }
             }
@@ -489,151 +476,15 @@ namespace LastEpoch_Hud.Scripts
                     
                     Content.OdlForceDrop.unique_mods.active = Content.OdlForceDrop.unique_mods_enable;
                     Content.OdlForceDrop.unique_mods_border.active = Content.OdlForceDrop.unique_mods_enable;
-                    if (!Content.OdlForceDrop.unique_mods_enable)
-                    {
-                        Content.OdlForceDrop.unique_mods_roll_0 = false;
-                        Content.OdlForceDrop.unique_mods_roll_1 = false;
-                        Content.OdlForceDrop.unique_mods_roll_2 = false;
-                        Content.OdlForceDrop.unique_mods_roll_3 = false;
-                        Content.OdlForceDrop.unique_mods_roll_4 = false;
-                        Content.OdlForceDrop.unique_mods_roll_5 = false;
-                        Content.OdlForceDrop.unique_mods_roll_6 = false;
-                        Content.OdlForceDrop.unique_mods_roll_7 = false;
-
-                        Content.OdlForceDrop.nb_evolution.active = false;
-                        Content.OdlForceDrop.beast_evolution_border.active = false;
-                        Content.OdlForceDrop.beast_evolution_0_enable = false;
-                        Content.OdlForceDrop.beast_evolution_1_enable = false;
-                        Content.OdlForceDrop.beast_evolution_2_enable = false;
-                        Content.OdlForceDrop.beast_evolution_3_enable = false;
-                        Content.OdlForceDrop.beast_evolution_4_enable = false;
-                        Content.OdlForceDrop.beast_evolution_5_enable = false;
-                        Content.OdlForceDrop.beast_evolution_6_enable = false;
-                    }
-                    else if (Content.OdlForceDrop.item_unique_id == 444)
-                    {
-                        //Content.OdlForceDrop.unique_mods_roll_0 = true;
-                        Content.OdlForceDrop.unique_mods_roll_1 = false;
-                        Content.OdlForceDrop.unique_mods_roll_2 = false;
-                        Content.OdlForceDrop.unique_mods_roll_3 = false;
-                        Content.OdlForceDrop.unique_mods_roll_4 = false;
-                        Content.OdlForceDrop.unique_mods_roll_5 = false;
-                        Content.OdlForceDrop.unique_mods_roll_6 = false;
-                        Content.OdlForceDrop.unique_mods_roll_7 = false;
-
-                        Content.OdlForceDrop.nb_evolution.active = true;
-                        Content.OdlForceDrop.beast_evolution_border.active = true;
-                        Content.OdlForceDrop.beast_evolution_0_enable = true;
-                        Content.OdlForceDrop.beast_evolution_1_enable = true;
-                        Content.OdlForceDrop.beast_evolution_2_enable = true;
-                        Content.OdlForceDrop.beast_evolution_3_enable = true;
-                        Content.OdlForceDrop.beast_evolution_4_enable = true;
-                        Content.OdlForceDrop.beast_evolution_5_enable = true;
-                        Content.OdlForceDrop.beast_evolution_6_enable = true;
-                    }
-                    else
-                    {
-                        if (Content.OdlForceDrop.unique_mods_dropdown.value == 0)
-                        {
-                            Content.OdlForceDrop.unique_mods_roll_0 = false;
-                            Content.OdlForceDrop.unique_mods_roll_1 = false;
-                            Content.OdlForceDrop.unique_mods_roll_2 = false;
-                            Content.OdlForceDrop.unique_mods_roll_3 = false;
-                            Content.OdlForceDrop.unique_mods_roll_4 = false;
-                            Content.OdlForceDrop.unique_mods_roll_5 = false;
-                            Content.OdlForceDrop.unique_mods_roll_6 = false;
-                            Content.OdlForceDrop.unique_mods_roll_7 = false;
-                        }
-                        else
-                        {
-                            Content.OdlForceDrop.unique_mods_roll_0 = true;
-                            Content.OdlForceDrop.unique_mods_roll_1 = true;
-                            Content.OdlForceDrop.unique_mods_roll_2 = true;
-                            Content.OdlForceDrop.unique_mods_roll_3 = true;
-                            Content.OdlForceDrop.unique_mods_roll_4 = true;
-                            Content.OdlForceDrop.unique_mods_roll_5 = true;
-                            Content.OdlForceDrop.unique_mods_roll_6 = true;
-                            Content.OdlForceDrop.unique_mods_roll_7 = true;
-                        }
-
-                        Content.OdlForceDrop.nb_evolution.active = false;
-                        Content.OdlForceDrop.beast_evolution_border.active = false;
-                        Content.OdlForceDrop.beast_evolution_0_enable = false;
-                        Content.OdlForceDrop.beast_evolution_1_enable = false;
-                        Content.OdlForceDrop.beast_evolution_2_enable = false;
-                        Content.OdlForceDrop.beast_evolution_3_enable = false;
-                        Content.OdlForceDrop.beast_evolution_4_enable = false;
-                        Content.OdlForceDrop.beast_evolution_5_enable = false;
-                        Content.OdlForceDrop.beast_evolution_6_enable = false;
-                    }
-                    
-                    Content.OdlForceDrop.unique_mod_0.active = Content.OdlForceDrop.unique_mods_roll_0;
-                    Content.OdlForceDrop.unique_mod_1.active = Content.OdlForceDrop.unique_mods_roll_1;
-                    Content.OdlForceDrop.unique_mod_2.active = Content.OdlForceDrop.unique_mods_roll_2;
-                    Content.OdlForceDrop.unique_mod_3.active = Content.OdlForceDrop.unique_mods_roll_3;
-                    Content.OdlForceDrop.unique_mod_4.active = Content.OdlForceDrop.unique_mods_roll_4;
-                    Content.OdlForceDrop.unique_mod_5.active = Content.OdlForceDrop.unique_mods_roll_5;
-                    Content.OdlForceDrop.unique_mod_6.active = Content.OdlForceDrop.unique_mods_roll_6;
-                    Content.OdlForceDrop.unique_mod_7.active = Content.OdlForceDrop.unique_mods_roll_7;
-
-                    Content.OdlForceDrop.beast_evolution_0.active = Content.OdlForceDrop.beast_evolution_0_enable;
-                    Content.OdlForceDrop.beast_evolution_1.active = Content.OdlForceDrop.beast_evolution_1_enable;
-                    Content.OdlForceDrop.beast_evolution_2.active = Content.OdlForceDrop.beast_evolution_2_enable;
-                    Content.OdlForceDrop.beast_evolution_3.active = Content.OdlForceDrop.beast_evolution_3_enable;
-                    Content.OdlForceDrop.beast_evolution_4.active = Content.OdlForceDrop.beast_evolution_4_enable;
-                    Content.OdlForceDrop.beast_evolution_5.active = Content.OdlForceDrop.beast_evolution_5_enable;
-                    Content.OdlForceDrop.beast_evolution_6.active = Content.OdlForceDrop.beast_evolution_6_enable;
-
-                    if (Content.OdlForceDrop.beast_evolution_0_enable)
-                    {
-                        if (Content.OdlForceDrop.beast_evolution_0_dropdown.value == 0) { Content.OdlForceDrop.beast_evolution_select_0_enable = false; }
-                        else { Content.OdlForceDrop.beast_evolution_select_0_enable = true; }
-                    }
-                    else { Content.OdlForceDrop.beast_evolution_select_0_enable = false; }
-                    if (Content.OdlForceDrop.beast_evolution_1_enable)
-                    {
-                        if (Content.OdlForceDrop.beast_evolution_1_dropdown.value == 0) { Content.OdlForceDrop.beast_evolution_select_1_enable = false; }
-                        else { Content.OdlForceDrop.beast_evolution_select_1_enable = true; }
-                    }
-                    else { Content.OdlForceDrop.beast_evolution_select_1_enable = false; }
-                    if (Content.OdlForceDrop.beast_evolution_2_enable)
-                    {
-                        if (Content.OdlForceDrop.beast_evolution_2_dropdown.value == 0) { Content.OdlForceDrop.beast_evolution_select_2_enable = false; }
-                        else { Content.OdlForceDrop.beast_evolution_select_2_enable = true; }
-                    }
-                    else { Content.OdlForceDrop.beast_evolution_select_2_enable = false; }
-                    if (Content.OdlForceDrop.beast_evolution_3_enable)
-                    {
-                        if (Content.OdlForceDrop.beast_evolution_3_dropdown.value == 0) { Content.OdlForceDrop.beast_evolution_select_3_enable = false; }
-                        else { Content.OdlForceDrop.beast_evolution_select_3_enable = true; }
-                    }
-                    else { Content.OdlForceDrop.beast_evolution_select_3_enable = false; }
-                    if (Content.OdlForceDrop.beast_evolution_4_enable)
-                    {
-                        if (Content.OdlForceDrop.beast_evolution_4_dropdown.value == 0) { Content.OdlForceDrop.beast_evolution_select_4_enable = false; }
-                        else { Content.OdlForceDrop.beast_evolution_select_4_enable = true; }
-                    }
-                    else { Content.OdlForceDrop.beast_evolution_select_4_enable = false; }
-                    if (Content.OdlForceDrop.beast_evolution_5_enable)
-                    {
-                        if (Content.OdlForceDrop.beast_evolution_5_dropdown.value == 0) { Content.OdlForceDrop.beast_evolution_select_5_enable = false; }
-                        else { Content.OdlForceDrop.beast_evolution_select_5_enable = true; }
-                    }
-                    else { Content.OdlForceDrop.beast_evolution_select_5_enable = false; }
-                    if (Content.OdlForceDrop.beast_evolution_6_enable)
-                    {
-                        if (Content.OdlForceDrop.beast_evolution_6_dropdown.value == 0) { Content.OdlForceDrop.beast_evolution_select_6_enable = false; }
-                        else { Content.OdlForceDrop.beast_evolution_select_6_enable = true; }
-                    }
-                    else { Content.OdlForceDrop.beast_evolution_select_6_enable = false; }
-
-                    Content.OdlForceDrop.beast_evolution_select_0.active = Content.OdlForceDrop.beast_evolution_select_0_enable;
-                    Content.OdlForceDrop.beast_evolution_select_1.active = Content.OdlForceDrop.beast_evolution_select_1_enable;
-                    Content.OdlForceDrop.beast_evolution_select_2.active = Content.OdlForceDrop.beast_evolution_select_2_enable;
-                    Content.OdlForceDrop.beast_evolution_select_3.active = Content.OdlForceDrop.beast_evolution_select_3_enable;
-                    Content.OdlForceDrop.beast_evolution_select_4.active = Content.OdlForceDrop.beast_evolution_select_4_enable;
-                    Content.OdlForceDrop.beast_evolution_select_5.active = Content.OdlForceDrop.beast_evolution_select_5_enable;
-                    Content.OdlForceDrop.beast_evolution_select_6.active = Content.OdlForceDrop.beast_evolution_select_6_enable;
+                    if (!Content.OdlForceDrop.unique_mods_enable) { Content.OdlForceDrop.unique_mods_roll = false; }
+                    Content.OdlForceDrop.unique_mod_0.active = Content.OdlForceDrop.unique_mods_roll;
+                    Content.OdlForceDrop.unique_mod_1.active = Content.OdlForceDrop.unique_mods_roll;
+                    Content.OdlForceDrop.unique_mod_2.active = Content.OdlForceDrop.unique_mods_roll;
+                    Content.OdlForceDrop.unique_mod_3.active = Content.OdlForceDrop.unique_mods_roll;
+                    Content.OdlForceDrop.unique_mod_4.active = Content.OdlForceDrop.unique_mods_roll;
+                    Content.OdlForceDrop.unique_mod_5.active = Content.OdlForceDrop.unique_mods_roll;
+                    Content.OdlForceDrop.unique_mod_6.active = Content.OdlForceDrop.unique_mods_roll;
+                    Content.OdlForceDrop.unique_mod_7.active = Content.OdlForceDrop.unique_mods_roll;
 
                     Content.OdlForceDrop.legenday_potencial.active = Content.OdlForceDrop.legenday_potencial_enable;
                     Content.OdlForceDrop.legenday_potencial_border.active = Content.OdlForceDrop.legenday_potencial_enable;
@@ -644,9 +495,6 @@ namespace LastEpoch_Hud.Scripts
                     Content.OdlForceDrop.weaver_will_border.active = Content.OdlForceDrop.weaver_will_enable;
                     if (!Content.OdlForceDrop.weaver_will_enable) { Content.OdlForceDrop.weaver_will_roll = false; }
                     Content.OdlForceDrop.weaver_will_value.active = Content.OdlForceDrop.weaver_will_roll;
-
-                    Content.OdlForceDrop.corrupted.active = Content.OdlForceDrop.corrupted_enable;
-                    Content.OdlForceDrop.corrupted_border.active = Content.OdlForceDrop.corrupted_enable;
 
                     Content.OdlForceDrop.quantity.active = Content.OdlForceDrop.quantity_enable;
                     Content.OdlForceDrop.quantity_border.active = Content.OdlForceDrop.quantity_enable;
@@ -682,16 +530,12 @@ namespace LastEpoch_Hud.Scripts
                             try
                             {
                                 int i = System.Convert.ToInt32(__instance.name.Split('_')[1]);
+                                //GameObject shard_id_object = Functions.GetChild(shard_btn_object, "shard_id");
+                                //Text shard_id = shard_id_object.GetComponent<Text>();
+
                                 GameObject shard_name_object = Functions.GetChild(__instance.gameObject, "shard_name");
-                                if (!shard_name_object.IsNullOrDestroyed())
-                                {
-                                    GameObject text = Functions.GetChild(shard_name_object, "Text");
-                                    if (!text.IsNullOrDestroyed())
-                                    {
-                                        Text shard_name = text.GetComponent<Text>();
-                                        Content.OdlForceDrop.SelectShard(i, shard_name.text);
-                                    }
-                                }
+                                Text shard_name = shard_name_object.GetComponent<Text>();                                
+                                Content.OdlForceDrop.SelectShard(i, shard_name.text);
                             }
                             catch { }
                         }
@@ -781,7 +625,7 @@ namespace LastEpoch_Hud.Scripts
                                     case "Toggle_Items_Drop_ForceSeal": { Save_Manager.instance.data.Items.Drop.Enable_ForceSeal = __instance.isOn; break; }
                                     case "Toggle_Items_Drop_SealTier": { Save_Manager.instance.data.Items.Drop.Enable_SealTier = __instance.isOn; break; }
                                     case "Toggle_Items_Drop_SealValue": { Save_Manager.instance.data.Items.Drop.Enable_SealValue = __instance.isOn; break; }
-                                    case "Toggle_Items_Drop_NbAffixes": { Save_Manager.instance.data.Items.Drop.Enable_AffixCount = __instance.isOn; break; }
+                                    case "Toggle_Items_Drop_NbAffixes": { Save_Manager.instance.data.Items.Drop.Enable_AffixCount = __instance.isOn; break; }                                    
                                     case "Toggle_Items_Drop_AffixesTiers": { Save_Manager.instance.data.Items.Drop.Enable_AffixTiers = __instance.isOn; break; }
                                     case "Toggle_Items_Drop_AffixesValues": { Save_Manager.instance.data.Items.Drop.Enable_AffixValues = __instance.isOn; break; }
                                     case "Toggle_Items_Drop_UniqueMods": { Save_Manager.instance.data.Items.Drop.Enable_UniqueMods = __instance.isOn; break; }
@@ -801,8 +645,7 @@ namespace LastEpoch_Hud.Scripts
                                     case "Toggle_Items_Pickup_AutoStore_OnInventoryOpen": { Save_Manager.instance.data.Items.Pickup.Enable_AutoStore_OnInventoryOpen = __instance.isOn; break; }
                                     case "Toggle_Items_Pickup_AutoStore_Timer": { Save_Manager.instance.data.Items.Pickup.Enable_AutoStore_Timer = __instance.isOn; break; }
                                     case "Toggle_Items_Pickup_AutoSell_FromFilter": { Save_Manager.instance.data.Items.Pickup.Enable_AutoSell_FromFilter = __instance.isOn; break; }
-                                    case "Toggle_Items_Pickup_AutoShatter_FromFilter": { Save_Manager.instance.data.Items.Pickup.Enable_AutoShatter_FromFilter = __instance.isOn; break; }
-                                    case "Toggle_Items_Pickup_AutoShatter_Rune": { Save_Manager.instance.data.Items.Pickup.Enable_AutoShatter_UseRune = __instance.isOn; break; }
+                                    
                                     case "Toggle_Items_Pickup_Range_Pickup": { Save_Manager.instance.data.Items.Pickup.Enable_RangePickup = __instance.isOn; break; }
                                     case "Toggle_Items_Pickup_Hide_Notifications": { Save_Manager.instance.data.Items.Pickup.Enable_HideMaterialsNotifications = __instance.isOn; break; }
 
@@ -937,9 +780,9 @@ namespace LastEpoch_Hud.Scripts
                                     case "Toggle_DreadShades_DisableLimit": { Save_Manager.instance.data.Skills.Minions.DreadShades.Enable_DisableLimit = __instance.isOn; break; }
                                     case "Toggle_DreadShades_DisableHealthDrain": { Save_Manager.instance.data.Skills.Minions.DreadShades.Enable_DisableHealthDrain = __instance.isOn; break; }
                                 }
-                            }
+                            }                            
                         }
-                    }
+                    }                    
                 }
             }
 
@@ -1024,7 +867,7 @@ namespace LastEpoch_Hud.Scripts
                                             {
                                                 Refs_Manager.player_data.Deaths = (int)__0;
                                             }
-
+                                            
                                             //Content.Character.Data.deaths_text.text = ((int)__0).ToString();
                                             break;
                                         }
@@ -1189,7 +1032,7 @@ namespace LastEpoch_Hud.Scripts
                                         {
                                             if (Save_Manager.instance.data.Items.Drop.AffixCount_Max != __0) { Save_Manager.instance.data.Items.Drop.AffixCount_Max = __0; }
                                             if (__0 < Save_Manager.instance.data.Items.Drop.AffixCount_Min) { Content.Items.Drop.affix_count_slider_min.value = __0; }
-
+                                            
                                             break;
                                         }
                                     case "Slider_Items_Drop_AffixesTiers_Min":
@@ -1259,9 +1102,6 @@ namespace LastEpoch_Hud.Scripts
                                             if (__0 < Save_Manager.instance.data.Items.Drop.WeaverWill_Min) { Content.Items.Drop.weaver_will_slider_min.value = __0; }
                                             break;
                                         }
-                                    case "Slider_Items_Pickup_AutoShatter_Chance": { Save_Manager.instance.data.Items.Pickup.AutoShatter_Chance = (int)__0; break; }
-                                    case "Slider_Items_Pickup_AutoShatter_AffixChance": { Save_Manager.instance.data.Items.Pickup.AutoShatter_Affix_Chance = (int)__0; break; }
-                                    case "Slider_Items_Pickup_AutoShatter_QuantityChance": { Save_Manager.instance.data.Items.Pickup.AutoShatter_Quantity_Chance = (int)__0; break; }
                                     //Craft
                                     case "Slider_Items_Craft_ForginPotencial": { Save_Manager.instance.data.Items.CraftingSlot.ForginPotencial = __0; break; }
                                     case "Slider_Items_Craft_Implicit0": { Save_Manager.instance.data.Items.CraftingSlot.Implicit_0 = __0; break; }
@@ -1270,7 +1110,7 @@ namespace LastEpoch_Hud.Scripts
 
                                     case "Slider_Items_Craft_SealTier": { Save_Manager.instance.data.Items.CraftingSlot.Seal_Tier = (int)__0; break; }
                                     case "Slider_Items_Craft_SealValue": { Save_Manager.instance.data.Items.CraftingSlot.Seal_Value = __0; break; }
-
+                                    
                                     case "Slider_Items_Craft_AffixTier0": { Save_Manager.instance.data.Items.CraftingSlot.Affix_0_Tier = (int)__0; break; }
                                     case "Slider_Items_Craft_AffixTier1": { Save_Manager.instance.data.Items.CraftingSlot.Affix_1_Tier = (int)__0; break; }
                                     case "Slider_Items_Craft_AffixTier2": { Save_Manager.instance.data.Items.CraftingSlot.Affix_2_Tier = (int)__0; break; }
@@ -1306,7 +1146,7 @@ namespace LastEpoch_Hud.Scripts
                                     case "Slider_Scenes_Camera_OffsetMaximum": { Save_Manager.instance.data.Scenes.Camera.OffsetMaximum = __0; break; }
                                     case "Slider_Scenes_Camera_AngleMinimum": { Save_Manager.instance.data.Scenes.Camera.AngleMinimum = __0; break; }
                                     case "Slider_Scenes_Camera_AngleMaximum": { Save_Manager.instance.data.Scenes.Camera.AngleMaximum = __0; break; }
-
+                                    
                                     case "Slider_Scenes_Monoliths_MaxStability": { Save_Manager.instance.data.Scenes.Monoliths.MaxStability = __0; break; }
                                     case "Slider_Scenes_Monoliths_MobsDensity": { Save_Manager.instance.data.Scenes.Monoliths.MobsDensity = __0; break; }
                                     case "Slider_Scenes_Monoliths_MobsDefeatOnStart": { Save_Manager.instance.data.Scenes.Monoliths.MobsDefeatOnStart = __0; break; }
@@ -1369,16 +1209,17 @@ namespace LastEpoch_Hud.Scripts
                 if (!base_obj.IsNullOrDestroyed())
                 {
                     GameObject go = Functions.GetChild(base_obj, child);
+                    if (go.IsNullOrDestroyed()) { go = Functions.FindDescendant(base_obj, child); }
                     if (!go.IsNullOrDestroyed())
                     {
-                        GameObject btn_obj = Functions.GetChild(go, btn_name);
+                        GameObject btn_obj = Functions.FindDescendant(go, btn_name);
                         if (!btn_obj.IsNullOrDestroyed())
                         {
                             Button btn = btn_obj.GetComponent<Button>();
+                            if (btn.IsNullOrDestroyed()) { btn = btn_obj.GetComponentInChildren<Button>(true); }
                             if (!btn.IsNullOrDestroyed())
                             {
-                                btn.onClick = new Button.ButtonClickedEvent();
-                                btn.onClick.AddListener(action);
+                                Set_Button_Event(btn, action);
                             }
                             else { Main.logger_instance.Error("Set_Base_Button_Event Can't found button"); }
                         }
@@ -1390,8 +1231,14 @@ namespace LastEpoch_Hud.Scripts
             }
             public static void Set_Button_Event(Button btn, UnityEngine.Events.UnityAction action)
             {
-                btn.onClick = new Button.ButtonClickedEvent();
-                btn.onClick.AddListener(action);
+                if (btn.IsNullOrDestroyed() || action == null) { return; }
+                Button.ButtonClickedEvent click = btn.onClick;
+                if (click == null)
+                {
+                    click = new Button.ButtonClickedEvent();
+                    btn.onClick = click;
+                }
+                click.AddListener(action);
             }
             public static void Set_Slider_Event(Slider slider, UnityEngine.Events.UnityAction<float> action)
             {
@@ -1402,11 +1249,6 @@ namespace LastEpoch_Hud.Scripts
             {
                 toggle.onValueChanged = new Toggle.ToggleEvent();
                 toggle.onValueChanged.AddListener(action);
-            }
-            public static void Set_DropDown_Event(Dropdown dropdown, UnityEngine.Events.UnityAction<int> action)
-            {
-                dropdown.onValueChanged = new Dropdown.DropdownEvent();
-                dropdown.onValueChanged.AddListener(action);
             }
         }
         public class Hud_Base
@@ -1423,54 +1265,45 @@ namespace LastEpoch_Hud.Scripts
             public static GameObject ChapterInfo = null;
             public static GameObject Menu_Fade_Background = null;
             public static GameObject Chapter_Fade_Background = null;
-
-            static float lastWalkTime = -100f;
-            const float PauseMenuWalkIntervalSec = 0.5f;
-
+                        
             public static bool Get_DefaultPauseMenu()
             {
-                if (game_pause_menu.IsNullOrDestroyed())
+                bool result = false;
+                if (!Refs_Manager.game_uibase.IsNullOrDestroyed())
                 {
-                    if (Time.realtimeSinceStartup - lastWalkTime < PauseMenuWalkIntervalSec) { return false; }
-                    lastWalkTime = Time.realtimeSinceStartup;
-                    foreach (Il2CppLE.UI.PanelSystem.MainMenuPanel obj in Resources.FindObjectsOfTypeAll<Il2CppLE.UI.PanelSystem.MainMenuPanel>())
+                    GameObject root = null;
+                    if (!Refs_Manager.game_uibase.bottomScreenMenu.IsNullOrDestroyed())
                     {
-                        if (obj.name.Contains("Clone"))
+                        root = Refs_Manager.game_uibase.bottomScreenMenu.gameObject;
+                    }
+                    if (!root.IsNullOrDestroyed())
+                    {
+                        // The old pause panel lived under "Menu Image". The bottom bar does not.
+                        // Only treat this object as the pause menu when that panel is actually there,
+                        // otherwise the title screen looks paused and clicks (Play Offline) are blocked.
+                        GameObject menuImage = FindDirectChild(root, "Menu Image");
+                        if (!menuImage.IsNullOrDestroyed())
                         {
-                            game_pause_menu = obj.gameObject;
-                            break;
+                            game_pause_menu = root;
+                            Default_PauseMenu_Btns = menuImage;
+                            Get_Refs();
+                            result = true;
                         }
                     }
                 }
-                if (!game_pause_menu.IsNullOrDestroyed())
-                {
-                    if (Default_PauseMenu_Btns.IsNullOrDestroyed()) { Default_PauseMenu_Btns = Functions.GetChild(game_pause_menu, "Menu"); }
-                    if (!Default_PauseMenu_Btns.IsNullOrDestroyed()) { Get_Refs(); }
-                    return !Default_PauseMenu_Btns.IsNullOrDestroyed();
-                }
-                return false;
+
+                return result;
             }
 
-            [HarmonyPatch(typeof(Il2CppLE.UI.PanelSystem.MainMenuPanel), "OnOpen")]
-            public class MainMenuPanel_OnOpen_Cache
+            static GameObject FindDirectChild(GameObject obj, string name)
             {
-                [HarmonyPostfix]
-                static void Postfix(Il2CppLE.UI.PanelSystem.MainMenuPanel __instance)
+                if (obj.IsNullOrDestroyed()) { return null; }
+                for (int i = 0; i < obj.transform.childCount; i++)
                 {
-                    if (__instance.IsNullOrDestroyed()) { return; }
-                    if (!__instance.name.Contains("Clone")) { return; }
-                    game_pause_menu = __instance.gameObject;
-                    if (Default_PauseMenu_Btns.IsNullOrDestroyed())
-                    {
-                        var menu = Functions.GetChild(__instance.gameObject, "Menu");
-                        if (!menu.IsNullOrDestroyed())
-                        {
-                            Default_PauseMenu_Btns = menu;
-                            Get_Refs();
-                        }
-                    }
-                    lastWalkTime = Time.realtimeSinceStartup;
+                    GameObject child = obj.transform.GetChild(i).gameObject;
+                    if (child.name == name) { return child; }
                 }
+                return null;
             }
             public static void Set_ChapterInfo(bool show)
             {
@@ -1509,11 +1342,11 @@ namespace LastEpoch_Hud.Scripts
                     GameObject Btns = Functions.GetChild(Default_PauseMenu_Btns, "Buttons");
                     if (!Btns.IsNullOrDestroyed())
                     {
-                        Hud_Base.Btn_Resume = Functions.GetChild(Btns, "Resume Button").GetComponent<Button>();
-                        Hud_Base.Btn_Settings = Functions.GetChild(Btns, "Settings Button").GetComponent<Button>();
-                        Hud_Base.Btn_GameGuide = Functions.GetChild(Btns, "Game Guide Button").GetComponent<Button>();
-                        Hud_Base.Btn_LeaveGame = Functions.GetChild(Btns, "Character Select Button").GetComponent<Button>();
-                        Hud_Base.Btn_ExitDesktop = Functions.GetChild(Btns, "Exit Button").GetComponent<Button>();
+                        Hud_Base.Btn_Resume = Functions.GetChild(Btns, "ResumeButton (1)").GetComponent<Button>();
+                        Hud_Base.Btn_Settings = Functions.GetChild(Btns, "SettingsButton").GetComponent<Button>();
+                        Hud_Base.Btn_GameGuide = Functions.GetChild(Btns, "GameButton").GetComponent<Button>();
+                        Hud_Base.Btn_LeaveGame = Functions.GetChild(Btns, "ExitToCharacterSelectButton").GetComponent<Button>();
+                        Hud_Base.Btn_ExitDesktop = Functions.GetChild(Btns, "ExitGameButton").GetComponent<Button>();
                     }
                 }
             }            
@@ -1521,16 +1354,12 @@ namespace LastEpoch_Hud.Scripts
             {
                 if ((!Default_PauseMenu_Btns.IsNullOrDestroyed()) && (!hud_object.IsNullOrDestroyed()))
                 {
-                    GameObject base_obj = Functions.GetChild(hud_object, "Base");
-                    if (!base_obj.IsNullOrDestroyed())
-                    {
-                        Events.Set_Base_Button_Event(base_obj, "Content", "Btn_Base_Resume", Resume_OnClick_Action);
-                        Events.Set_Base_Button_Event(base_obj, "Content", "Btn_Base_Settings", Settings_OnClick_Action);
-                        Events.Set_Base_Button_Event(base_obj, "Content", "Btn_Base_GameGuide", GameGuide_OnClick_Action);
-                        Events.Set_Base_Button_Event(base_obj, "Content", "Btn_Base_LeaveGame", LeaveGame_OnClick_Action);
-                        Events.Set_Base_Button_Event(base_obj, "Content", "Btn_Base_ExitDesktop", ExitDesktop_OnClick_Action);
-                        initiliazed_events = true;
-                    }
+                    Events.Set_Base_Button_Event(hud_object, "Base", "Btn_Base_Resume", Resume_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Base", "Btn_Base_Settings", Settings_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Base", "Btn_Base_GameGuide", GameGuide_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Base", "Btn_Base_LeaveGame", LeaveGame_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Base", "Btn_Base_ExitDesktop", ExitDesktop_OnClick_Action);
+                    initiliazed_events = true;
                 }
             }
 
@@ -1578,122 +1407,81 @@ namespace LastEpoch_Hud.Scripts
             {
                 if (!hud_object.IsNullOrDestroyed())
                 {
-                    GameObject menu = Functions.GetChild(hud_object, "Menu");
-                    if (!menu.IsNullOrDestroyed())
-                    {
-                        Events.Set_Base_Button_Event(menu, "Content", "Btn_Menu_Character", Character_OnClick_Action);
-                        Events.Set_Base_Button_Event(menu, "Content", "Btn_Menu_Items", Items_OnClick_Action);
-                        Events.Set_Base_Button_Event(menu, "Content", "Btn_Menu_Scenes", Scenes_OnClick_Action);
-                        Events.Set_Base_Button_Event(menu, "Content", "Btn_Menu_TreeSkills", Skills_OnClick_Action);
-                        Events.Set_Base_Button_Event(menu, "Content", "Btn_Menu_ForceDrop", OldForceDrop_OnClick_Action);
-                        Events.Set_Base_Button_Event(menu, "Content", "Btn_Menu_NewItems", NewItems_OnClick_Action);
-                        Events.Set_Base_Button_Event(menu, "Content", "Btn_Menu_Maxroll", Maxroll_OnClick_Action);
-                    }
+                    Events.Set_Base_Button_Event(hud_object, "Menu", "Btn_Menu_Character", Character_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Menu", "Btn_Menu_Items", Items_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Menu", "Btn_Menu_Scenes", Scenes_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Menu", "Btn_Menu_TreeSkills", Skills_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Menu", "Btn_Menu_ForceDrop", OldForceDrop_OnClick_Action);
+                    Events.Set_Base_Button_Event(hud_object, "Menu", "Btn_Menu_Headhunter", Headhunter_OnClick_Action);
                 }
             }
             
-            public static void DeactivateOriginalTabs()
-            {
-                Content.Character.Set_Active(false);
-                Content.Items.Set_Active(false);
-                Content.Scenes.Set_Active(false);
-                Content.Skills.Set_Active(false);
-                Content.OdlForceDrop.Set_Active(false);
-                Content.NewItems.Set_Active(false);
-                Content.Maxroll.Set_Active(false);
-            }
-
             private static readonly System.Action Character_OnClick_Action = new System.Action(Character_Click);
             public static void Character_Click()
             {
-                ModUI.TabManager.DeactivateAll();
                 Content.Items.Set_Active(false);
                 Content.Scenes.Set_Active(false);
                 Content.Skills.Set_Active(false);
                 Content.OdlForceDrop.Set_Active(false);
-                Content.NewItems.Set_Active(false);
-                Content.Maxroll.Set_Active(false);
+                Content.Headhunter.Set_Active(false);
                 Content.Character.Toggle_Active();          
             }
 
             private static readonly System.Action Items_OnClick_Action = new System.Action(Items_Click);
             public static void Items_Click()
             {
-                ModUI.TabManager.DeactivateAll();
                 Content.Character.Set_Active(false);
                 Content.Scenes.Set_Active(false);
                 Content.Skills.Set_Active(false);
                 Content.OdlForceDrop.Set_Active(false);
-                Content.NewItems.Set_Active(false);
-                Content.Maxroll.Set_Active(false);
+                Content.Headhunter.Set_Active(false);
                 Content.Items.Toggle_Active();
             }
 
             private static readonly System.Action Scenes_OnClick_Action = new System.Action(Scenes_Click);
             public static void Scenes_Click()
             {
-                ModUI.TabManager.DeactivateAll();
                 Content.Character.Set_Active(false);
                 Content.Items.Set_Active(false);
                 Content.Skills.Set_Active(false);
                 Content.OdlForceDrop.Set_Active(false);
-                Content.NewItems.Set_Active(false);
-                Content.Maxroll.Set_Active(false);
+                Content.Headhunter.Set_Active(false);
                 Content.Scenes.Toggle_Active();
             }
 
             private static readonly System.Action Skills_OnClick_Action = new System.Action(Skills_Click);
             public static void Skills_Click()
             {
-                ModUI.TabManager.DeactivateAll();
                 Content.Character.Set_Active(false);
                 Content.Items.Set_Active(false);
                 Content.Scenes.Set_Active(false);
                 Content.OdlForceDrop.Set_Active(false);
-                Content.NewItems.Set_Active(false);
-                Content.Maxroll.Set_Active(false);
+                Content.Headhunter.Set_Active(false);
                 Content.Skills.Toggle_Active();
             }
 
             private static readonly System.Action OldForceDrop_OnClick_Action = new System.Action(OldForceDrop_Click);
             public static void OldForceDrop_Click()
             {
-                ModUI.TabManager.DeactivateAll();
                 Content.Character.Set_Active(false);
                 Content.Items.Set_Active(false);
                 Content.Scenes.Set_Active(false);
                 Content.Skills.Set_Active(false);
-                Content.NewItems.Set_Active(false);
-                Content.Maxroll.Set_Active(false);
+                Content.Headhunter.Set_Active(false);
                 Content.OdlForceDrop.Toggle_Active();
             }
 
-            private static readonly System.Action NewItems_OnClick_Action = new System.Action(NewItems_Click);
-            public static void NewItems_Click()
+            private static readonly System.Action Headhunter_OnClick_Action = new System.Action(Headhunter_Click);
+            public static void Headhunter_Click()
             {
-                ModUI.TabManager.DeactivateAll();
                 Content.Character.Set_Active(false);
                 Content.Items.Set_Active(false);
                 Content.Scenes.Set_Active(false);
                 Content.Skills.Set_Active(false);
                 Content.OdlForceDrop.Set_Active(false);
-                Content.Maxroll.Set_Active(false);
-                Content.NewItems.Toggle_Active();
+                Content.Headhunter.Toggle_Active();
             }
-
-            private static readonly System.Action Maxroll_OnClick_Action = new System.Action(Maxroll_Click);
-            public static void Maxroll_Click()
-            {
-                ModUI.TabManager.DeactivateAll();
-                Content.Character.Set_Active(false);
-                Content.Items.Set_Active(false);
-                Content.Scenes.Set_Active(false);
-                Content.Skills.Set_Active(false);
-                Content.OdlForceDrop.Set_Active(false);
-                Content.NewItems.Set_Active(false);
-                Content.Maxroll.Toggle_Active();
-            }
-        }
+        }                
         public class Content
         {
             public static GameObject content_obj = null;
@@ -1703,7 +1491,7 @@ namespace LastEpoch_Hud.Scripts
                 {
                     bool show = false;
                     if ((Character.enable) || (Items.enable) || (Scenes.enable) || (Skills.enable) ||
-                        (OdlForceDrop.enable) || (NewItems.enable) || (Maxroll.enable)) { show = true; }
+                        (OdlForceDrop.enable) || (Headhunter.enable)) { show = true; }
                     if (content_obj.active != show) { content_obj.active = show; }
                 }
             }
@@ -1714,8 +1502,7 @@ namespace LastEpoch_Hud.Scripts
                 Scenes.enable = false;
                 Skills.enable = false;
                 OdlForceDrop.enable = false;
-                NewItems.enable = false;
-                Maxroll.enable = false;
+                Headhunter.enable = false;
             }
 
             public class Character
@@ -1790,7 +1577,6 @@ namespace LastEpoch_Hud.Scripts
                                 Cheats.add_runes_button = Functions.GetChild(character_cheats_content, "Btn_Character_Cheats_AddRunes").GetComponent<Button>();
                                 Cheats.add_glyphs_button = Functions.GetChild(character_cheats_content, "Btn_Character_Cheats_AddGlyphs").GetComponent<Button>();
                                 Cheats.add_shards_button = Functions.GetChild(character_cheats_content, "Btn_Character_Cheats_AddAffixs").GetComponent<Button>();
-                                Cheats.add_ancien_bone_button = Functions.GetChild(character_cheats_content, "Btn_Character_Cheats_AddAncienBone").GetComponent<Button>();
                                 Cheats.discover_blessings_button = Functions.GetChild(character_cheats_content, "Btn_Character_Cheats_DicoverAllBlessings").GetComponent<Button>();
                             }
                             else { Main.logger_instance.Error("Hud Manager : character_cheats_content is null"); }
@@ -2053,10 +1839,6 @@ namespace LastEpoch_Hud.Scripts
                     if (!Cheats.discover_blessings_button.IsNullOrDestroyed())
                     {
                         Events.Set_Button_Event(Cheats.discover_blessings_button, Cheats.DiscoverAllBlessings_OnClick_Action);
-                    }
-                    if (!Cheats.add_ancien_bone_button.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(Cheats.add_ancien_bone_button, Cheats.AddAncienBone_OnClick_Action);
                     }
                     if (!Data.monolith_stability_basic_slider.IsNullOrDestroyed())
                     {
@@ -2864,13 +2646,6 @@ namespace LastEpoch_Hud.Scripts
                     {
                         Mods.Character.Character_Blessings.DiscoverAllBlessings();
                     }
-
-                    public static Button add_ancien_bone_button = null;
-                    public static readonly System.Action AddAncienBone_OnClick_Action = new System.Action(AddAncienBones_Click);
-                    public static void AddAncienBones_Click()
-                    {
-                        Mods.Character.Character_Materials.GetAddAncienBonesX10000();
-                    }
                 }
                 public class Data
                 {
@@ -3284,15 +3059,6 @@ namespace LastEpoch_Hud.Scripts
                                 Pickup.autostore_materials_Timer_slider = Functions.Get_SliderInPanel(items_pickup_content, "AutoStore_Timer", "Slider_Items_Pickup_AutoStore_Timer");
 
                                 Pickup.autosell_hide_toggle = Functions.Get_ToggleInPanel(items_pickup_content, "AutoSell_FromFilter", "Toggle_Items_Pickup_AutoSell_FromFilter");
-                                
-                                Pickup.autoshatter_hide_toggle = Functions.Get_ToggleInPanel(items_pickup_content, "AutoShatter_FromFilter", "Toggle_Items_Pickup_AutoShatter_FromFilter");
-                                Pickup.autoshatter_rune_toggle = Functions.Get_ToggleInPanel(items_pickup_content, "AutoShatter_Rune", "Toggle_Items_Pickup_AutoShatter_Rune");
-                                Pickup.autoshatter_chance_text = Functions.Get_TextInPanel(items_pickup_content, "AutoShatter_Chance", "Value");
-                                Pickup.autoshatter_chance_slider = Functions.Get_SliderInPanel(items_pickup_content, "AutoShatter_Chance", "Slider_Items_Pickup_AutoShatter_Chance");
-                                Pickup.autoshatter_affix_chance_text = Functions.Get_TextInPanel(items_pickup_content, "AutoShatter_AffixChance", "Value");
-                                Pickup.autoshatter_affix_chance_slider = Functions.Get_SliderInPanel(items_pickup_content, "AutoShatter_AffixChance", "Slider_Items_Pickup_AutoShatter_AffixChance");
-                                Pickup.autoshatter_quantity_chance_text = Functions.Get_TextInPanel(items_pickup_content, "AutoShatter_QuantityChance", "Value");
-                                Pickup.autoshatter_quantity_chance_slider = Functions.Get_SliderInPanel(items_pickup_content, "AutoShatter_QuantityChance", "Slider_Items_Pickup_AutoShatter_QuantityChance");
 
                                 Pickup.range_pickup_toggle = Functions.Get_ToggleInPanel(items_pickup_content, "Range_Pickup", "Toggle_Items_Pickup_Range_Pickup");
                                 Pickup.hide_materials_notifications_toggle = Functions.Get_ToggleInPanel(items_pickup_content, "Hide_Notifications", "Toggle_Items_Pickup_Hide_Notifications");
@@ -3521,12 +3287,7 @@ namespace LastEpoch_Hud.Scripts
                             Pickup.autostore_materials_Timer_toggle.isOn = Save_Manager.instance.data.Items.Pickup.Enable_AutoStore_Timer;
                             Pickup.autostore_materials_Timer_slider.value = Save_Manager.instance.data.Items.Pickup.AutoStore_Timer;
 
-                            Pickup.autosell_hide_toggle.isOn = Save_Manager.instance.data.Items.Pickup.Enable_AutoSell_FromFilter;
-                            Pickup.autoshatter_hide_toggle.isOn = Save_Manager.instance.data.Items.Pickup.Enable_AutoShatter_FromFilter;
-                            Pickup.autoshatter_rune_toggle.isOn = Save_Manager.instance.data.Items.Pickup.Enable_AutoShatter_UseRune;
-                            Pickup.autoshatter_chance_slider.value = Save_Manager.instance.data.Items.Pickup.AutoShatter_Chance;
-                            Pickup.autoshatter_affix_chance_slider.value = Save_Manager.instance.data.Items.Pickup.AutoShatter_Affix_Chance;
-                            Pickup.autoshatter_quantity_chance_slider.value = Save_Manager.instance.data.Items.Pickup.AutoShatter_Quantity_Chance;
+                            Pickup.autosell_hide_toggle.isOn = Save_Manager.instance.data.Items.Pickup.Enable_AutoSell_FromFilter;                            
 
                             Pickup.range_pickup_toggle.isOn = Save_Manager.instance.data.Items.Pickup.Enable_RangePickup;
                             Pickup.hide_materials_notifications_toggle.isOn = Save_Manager.instance.data.Items.Pickup.Enable_HideMaterialsNotifications;
@@ -3633,9 +3394,6 @@ namespace LastEpoch_Hud.Scripts
                             CraftingSlot.legendary_potencial_text.text = "" + (int)(Save_Manager.instance.data.Items.CraftingSlot.LegendaryPotencial);
                             CraftingSlot.weaver_will_text.text = "" + (int)(Save_Manager.instance.data.Items.CraftingSlot.WeaverWill);
                             Pickup.autostore_materials_Timer_text.text = "All " + (int)Save_Manager.instance.data.Items.Pickup.AutoStore_Timer + " sec";
-                            Pickup.autoshatter_chance_text.text = "" + (int)(Save_Manager.instance.data.Items.Pickup.AutoShatter_Chance) + " %";
-                            Pickup.autoshatter_affix_chance_text.text = "" + (int)(Save_Manager.instance.data.Items.Pickup.AutoShatter_Affix_Chance) + " %";
-                            Pickup.autoshatter_quantity_chance_text.text = "" + (int)(Save_Manager.instance.data.Items.Pickup.AutoShatter_Quantity_Chance) + " %";
 
                             //Tiers
                             Drop.seal_tier_text.text = ((int)(Save_Manager.instance.data.Items.Drop.SealTier_Min) + 1) + " to " + ((int)(Save_Manager.instance.data.Items.Drop.SealTier_Max) + 1);
@@ -3746,15 +3504,6 @@ namespace LastEpoch_Hud.Scripts
                     public static Text autostore_materials_Timer_text = null;
                     public static Slider autostore_materials_Timer_slider = null;                    
                     public static Toggle autosell_hide_toggle = null;
-                    public static Toggle autoshatter_hide_toggle = null;
-                    public static Toggle autoshatter_rune_toggle = null;
-                    public static Text autoshatter_chance_text = null;
-                    public static Slider autoshatter_chance_slider = null;
-                    public static Text autoshatter_affix_chance_text = null;
-                    public static Slider autoshatter_affix_chance_slider = null;
-                    public static Text autoshatter_quantity_chance_text = null;
-                    public static Slider autoshatter_quantity_chance_slider = null;
-
                     public static Toggle range_pickup_toggle = null;
                     public static Toggle hide_materials_notifications_toggle = null;
                 }
@@ -4004,7 +3753,7 @@ namespace LastEpoch_Hud.Scripts
                                                 ((item_rarity == 8) && (unique.isSetItem))))
                                             {
                                                 string name = unique.displayName;
-                                                if ((name == "") || (name == "Pearls of the Swine") || (name == "Scales of Eterra")) { name = unique.name; } // if item's displayName is "Pearls of the Swine", use unique.name instead of unique.displayName
+                                                if (name == "") { name = unique.name; }
                                                 options.Add(new Dropdown.OptionData { text = name });
                                             }
                                         }
@@ -4122,9 +3871,9 @@ namespace LastEpoch_Hud.Scripts
                                         if (!item.isUniqueSetOrLegendary()) { item.forgingPotential = (byte)Random.RandomRange(0f, 255f); }
                                         UniqueList.LegendaryType legendary_type = UniqueList.LegendaryType.LegendaryPotential;
                                         if (item.isUniqueSetOrLegendary())
-                                        {                                            
-                                            for (int k = 0; k < item.uniqueRolls.Count; k++) { item.uniqueRolls[k] = (byte)Random.RandomRange(0f, 255f); }                                            
+                                        {
                                             legendary_type = UniqueList.getUnique((ushort)item_unique_id).legendaryType;
+                                            for (int k = 0; k < item.uniqueRolls.Count; k++) { item.uniqueRolls[k] = (byte)Random.RandomRange(0f, 255f); }
                                             if (legendary_type == UniqueList.LegendaryType.WeaversWill) { item.weaversWill = (byte)Random.RandomRange(0f, 28f); }
                                             else if (item.isUnique()) { item.legendaryPotential = (byte)Random.RandomRange(0f, 4f); }
                                         }
@@ -4296,10 +4045,6 @@ namespace LastEpoch_Hud.Scripts
                             if (!scene_dungeons_content.IsNullOrDestroyed())
                             {
                                 Dungeons.enter_without_key_toggle = Functions.Get_ToggleInPanel(scene_dungeons_content, "EnterWithoutKey", "Toggle_Scenes_Dungeons_EnterWithoutKey");
-
-                                Teleport.scene_dropdown = Functions.GetChild(scene_dungeons_content, "Teleport_Dropdown").GetComponent<Dropdown>();
-                                Teleport.scene_button = Functions.GetChild(scene_dungeons_content, "Teleport_Btn").GetComponent<Button>();
-                                Teleport.Init();
                             }
                             GameObject scene_minimap_content = Functions.GetViewportContent(content_obj, "Center", "Scenes_Minimap_Content");
                             if (!scene_minimap_content.IsNullOrDestroyed())
@@ -4339,7 +4084,6 @@ namespace LastEpoch_Hud.Scripts
                 {
                     Events.Set_Button_Event(Camera.reset_button, Camera.Reset_OnClick_Action);
                     Events.Set_Button_Event(Camera.set_button, Camera.Set_OnClick_Action);
-                    Events.Set_Button_Event(Teleport.scene_button, Teleport.Scene_OnClick_Action);
                 }
                 public static void Set_Active(bool show)
                 {
@@ -4506,55 +4250,6 @@ namespace LastEpoch_Hud.Scripts
                 {
                     public static Toggle enter_without_key_toggle = null;
                 }
-                public class Teleport
-                {
-                    public static Dropdown scene_dropdown = null;
-                    public static Button scene_button = null;
-                    public static readonly System.Action Scene_OnClick_Action = new System.Action(Scene_Teleport);
-
-                    public static void Init()
-                    {
-                        scene_dropdown.options.Clear();
-                        scene_dropdown.options.Add(new Dropdown.OptionData("Select"));
-
-                        Mods.Teleport.Teleport_ToScene.scene_names.Clear();
-                        Mods.Teleport.Teleport_ToScene.scene_names.Add("");
-                        foreach (SceneDetails scene_detail in SceneList.instance.sceneDetailsCollection)
-                        {
-                            if ((scene_detail.Name != "PersistentUI") &&
-                                (scene_detail.Name != "CharacterSelectScene") &&
-                                (scene_detail.Name != "Login") &&
-                                (scene_detail.Name != "PersistentUI") &&
-                                (scene_detail.Name != "MonolithHub") &&
-                                (scene_detail.Name != "A_Reward") &&
-                                (scene_detail.Name != "Mastery") &&
-                                (scene_detail.Name != "Neutral") &&
-                                (scene_detail.Name != "PCG_Dev") &&
-                                (!scene_detail.Name.Contains("PCG")) &&
-                                (!scene_detail.Name.Contains("Arena")) &&
-                                (scene_detail.LocalizedName != scene_detail.Name) && //New zones
-                                (!Mods.Teleport.Teleport_ToScene.scene_names.Contains(scene_detail.Name)))
-                            {
-                                string option_name = "";
-                                if (scene_detail.Name != scene_detail.LocalizedName)
-                                {
-                                    option_name = scene_detail.Name + " : " + scene_detail.LocalizedName;
-                                }
-                                else { option_name = scene_detail.Name; }
-                                if (option_name != "")
-                                {
-                                    //Main.logger_instance.Warning("add scene = " + scene_detail.Name);
-                                    Mods.Teleport.Teleport_ToScene.scene_names.Add(scene_detail.Name);
-                                    scene_dropdown.options.Add(new Dropdown.OptionData(option_name));
-                                }
-                            }
-                        }
-                    }
-                    public static void Scene_Teleport()
-                    {
-                        Mods.Teleport.Teleport_ToScene.StartTp(scene_dropdown.value);
-                    }
-                }
                 public class Monoliths
                 {
                     public static Toggle max_stability_toggle = null;
@@ -4619,10 +4314,6 @@ namespace LastEpoch_Hud.Scripts
                                 SkillTree.enable_movement_no_target_toggle = Functions.Get_ToggleInPanel(skills_content, "NoTarget", "Toggle_NoTarget");
                                 SkillTree.enable_movement_immune_toggle = Functions.Get_ToggleInPanel(skills_content, "ImmuneDuringMovement", "Toggle_ImmuneDuringMovement");
                                 SkillTree.enable_movement_simple_path_toggle = Functions.Get_ToggleInPanel(skills_content, "DisableSimplePath", "Toggle_DisableSimplePath");
-
-                                SkillTree.enable_summon_godmode_toggle = Functions.Get_ToggleInPanel(skills_content, "SummonGodMode", "Toggle");
-                                SkillTree.enable_summon_forever_toggle = Functions.Get_ToggleInPanel(skills_content, "SummonForever", "Toggle");
-                                SkillTree.enable_summon_dontcollide_toggle = Functions.Get_ToggleInPanel(skills_content, "SummonDontCollide", "Toggle");
                             }
                             else { Main.logger_instance.Error("Skills content is null"); }
 
@@ -4780,21 +4471,6 @@ namespace LastEpoch_Hud.Scripts
                         else { Main.logger_instance.Error("Skill Tree content is null"); }
                     }
                 }
-                public static void Set_Events()
-                {
-                    if (!SkillTree.enable_summon_godmode_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(SkillTree.enable_summon_godmode_toggle, SkillTree.Summon_Godmode_Toggle_Action);
-                    }
-                    if (!SkillTree.enable_summon_forever_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(SkillTree.enable_summon_forever_toggle, SkillTree.Summon_Forever_Toggle_Action);
-                    }
-                    if (!SkillTree.enable_summon_dontcollide_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(SkillTree.enable_summon_dontcollide_toggle, SkillTree.Summon_DontCollide_Toggle_Action);
-                    }
-                }
                 public static void Set_Active(bool show)
                 {
                     if (!content_obj.IsNullOrDestroyed())
@@ -4839,10 +4515,7 @@ namespace LastEpoch_Hud.Scripts
                             SkillTree.enable_movement_no_target_toggle.isOn = Save_Manager.instance.data.Skills.MovementSkills.Enable_NoTarget;
                             SkillTree.enable_movement_immune_toggle.isOn = Save_Manager.instance.data.Skills.MovementSkills.Enable_ImmuneDuringMovement;
                             SkillTree.enable_movement_simple_path_toggle.isOn = Save_Manager.instance.data.Skills.MovementSkills.Disable_SimplePath;
-                            
-                            SkillTree.enable_summon_godmode_toggle.isOn = Save_Manager.instance.data.Summon.Enable_GodMode;
-                            SkillTree.enable_summon_forever_toggle.isOn = Save_Manager.instance.data.Summon.Enable_Forever;
-                            SkillTree.enable_summon_dontcollide_toggle.isOn = Save_Manager.instance.data.Summon.Enable_DontCollide;
+
                             //Companions
                             Companions.enable_maximum_companions_toggle.isOn = Save_Manager.instance.data.Skills.Companion.Enable_Limit;
                             Companions.maximum_companions_slider.value = Save_Manager.instance.data.Skills.Companion.Limit;
@@ -5035,34 +4708,6 @@ namespace LastEpoch_Hud.Scripts
                     public static Toggle enable_movement_no_target_toggle = null;
                     public static Toggle enable_movement_immune_toggle = null;
                     public static Toggle enable_movement_simple_path_toggle = null;
-
-                    public static Toggle enable_summon_godmode_toggle = null;
-                    public static readonly System.Action<bool> Summon_Godmode_Toggle_Action = new System.Action<bool>(Set_Summon_Godmode_Enable);
-                    private static void Set_Summon_Godmode_Enable(bool enable)
-                    {
-                        if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!enable_summon_godmode_toggle.IsNullOrDestroyed()))
-                        {
-                            Save_Manager.instance.data.Summon.Enable_GodMode = enable_summon_godmode_toggle.isOn;
-                        }
-                    }
-                    public static Toggle enable_summon_forever_toggle = null;
-                    public static readonly System.Action<bool> Summon_Forever_Toggle_Action = new System.Action<bool>(Set_Summon_Forever_Enable);
-                    private static void Set_Summon_Forever_Enable(bool enable)
-                    {
-                        if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!enable_summon_forever_toggle.IsNullOrDestroyed()))
-                        {
-                            Save_Manager.instance.data.Summon.Enable_Forever = enable_summon_forever_toggle.isOn;
-                        }
-                    }
-                    public static Toggle enable_summon_dontcollide_toggle = null;
-                    public static readonly System.Action<bool> Summon_DontCollide_Toggle_Action = new System.Action<bool>(Set_Summon_DontCollide_Enable);
-                    private static void Set_Summon_DontCollide_Enable(bool enable)
-                    {
-                        if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!enable_summon_dontcollide_toggle.IsNullOrDestroyed()))
-                        {
-                            Save_Manager.instance.data.Summon.Enable_DontCollide = enable_summon_dontcollide_toggle.isOn;
-                        }
-                    }
                 }
                 public class Companions
                 {
@@ -5217,14 +4862,12 @@ namespace LastEpoch_Hud.Scripts
 
                 public static GameObject content_obj = null;
                 public static GameObject left_base_content = null;
-                public static GameObject center_content_1 = null; //Used for Keyboard
-                public static GameObject center_content = null; //viewport
+                public static GameObject center_content = null;
 
                 //Type
                 public static int type_size = 24;
                 public static Dropdown type_dropdown = null;
-                public static int item_type = -1;
-                public static EquipmentType item_equipmenttype = EquipmentType.ARCTUS_LENS;
+                public static int item_type = -1;               
                 public static bool Type_Initialized = false;
                 public static bool Initializing_type = false;
 
@@ -5325,8 +4968,6 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider affix_0_tier_slider = null;
                 public static readonly System.Action<float> affix_0_tier_Action = new System.Action<float>(SetAffix_0_Tier);
                 public static Text affix_0_value_text = null;
-                public static Toggle affix_0_random_toggle = null;
-                public static readonly System.Action<bool> Affix_0_RandomRoll_Toggle_Action = new System.Action<bool>(Set_Affix_0_RandomRoll_Enable);
                 public static Slider affix_0_value_slider = null;
                 public static readonly System.Action<float> affix_0_value_Action = new System.Action<float>(SetAffix_0_Value);
 
@@ -5341,8 +4982,6 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider affix_1_tier_slider = null;
                 public static readonly System.Action<float> affix_1_tier_Action = new System.Action<float>(SetAffix_1_Tier);
                 public static Text affix_1_value_text = null;
-                public static Toggle affix_1_random_toggle = null;
-                public static readonly System.Action<bool> Affix_1_RandomRoll_Toggle_Action = new System.Action<bool>(Set_Affix_1_RandomRoll_Enable);
                 public static Slider affix_1_value_slider = null;
                 public static readonly System.Action<float> affix_1_value_Action = new System.Action<float>(SetAffix_1_Value);
 
@@ -5357,8 +4996,6 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider affix_2_tier_slider = null;
                 public static readonly System.Action<float> affix_2_tier_Action = new System.Action<float>(SetAffix_2_Tier);
                 public static Text affix_2_value_text = null;
-                public static Toggle affix_2_random_toggle = null;
-                public static readonly System.Action<bool> Affix_2_RandomRoll_Toggle_Action = new System.Action<bool>(Set_Affix_2_RandomRoll_Enable);
                 public static Slider affix_2_value_slider = null;
                 public static readonly System.Action<float> affix_2_value_Action = new System.Action<float>(SetAffix_2_Value);
 
@@ -5373,8 +5010,6 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider affix_3_tier_slider = null;
                 public static readonly System.Action<float> affix_3_tier_Action = new System.Action<float>(SetAffix_3_Tier);
                 public static Text affix_3_value_text = null;
-                public static Toggle affix_3_random_toggle = null;
-                public static readonly System.Action<bool> Affix_3_RandomRoll_Toggle_Action = new System.Action<bool>(Set_Affix_3_RandomRoll_Enable);
                 public static Slider affix_3_value_slider = null;
                 public static readonly System.Action<float> affix_3_value_Action = new System.Action<float>(SetAffix_3_Value);
 
@@ -5389,8 +5024,6 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider affix_4_tier_slider = null;
                 public static readonly System.Action<float> affix_4_tier_Action = new System.Action<float>(SetAffix_4_Tier);
                 public static Text affix_4_value_text = null;
-                public static Toggle affix_4_random_toggle = null;
-                public static readonly System.Action<bool> Affix_4_RandomRoll_Toggle_Action = new System.Action<bool>(Set_Affix_4_RandomRoll_Enable);
                 public static Slider affix_4_value_slider = null;
                 public static readonly System.Action<float> affix_4_value_Action = new System.Action<float>(SetAffix_4_Value);
 
@@ -5405,131 +5038,56 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider affix_5_tier_slider = null;
                 public static readonly System.Action<float> affix_5_tier_Action = new System.Action<float>(SetAffix_5_Tier);
                 public static Text affix_5_value_text = null;
-                public static Toggle affix_5_random_toggle = null;
-                public static readonly System.Action<bool> Affix_5_RandomRoll_Toggle_Action = new System.Action<bool>(Set_Affix_5_RandomRoll_Enable);
                 public static Slider affix_5_value_slider = null;
                 public static readonly System.Action<float> affix_5_value_Action = new System.Action<float>(SetAffix_5_Value);
 
                 //Unique mods
                 public static bool unique_mods_enable = false;
+                public static bool unique_mods_roll = false;
                 public static GameObject unique_mods = null;
                 public static GameObject unique_mods_border = null;
                 public static Dropdown unique_mods_dropdown = null;
 
-                public static bool unique_mods_roll_0 = false;
                 public static GameObject unique_mod_0 = null;
                 public static Text unique_mod_0_Text = null;
                 public static Slider unique_mod_0_slider = null;
                 public static readonly System.Action<float> unique_mod_0_Action = new System.Action<float>(SetUniqueMod_0);
 
-                public static bool unique_mods_roll_1 = false;
                 public static GameObject unique_mod_1 = null;
                 public static Text unique_mod_1_Text = null;
                 public static Slider unique_mod_1_slider = null;
                 public static readonly System.Action<float> unique_mod_1_Action = new System.Action<float>(SetUniqueMod_1);
 
-                public static bool unique_mods_roll_2 = false;
                 public static GameObject unique_mod_2 = null;
                 public static Text unique_mod_2_Text = null;
                 public static Slider unique_mod_2_slider = null;
                 public static readonly System.Action<float> unique_mod_2_Action = new System.Action<float>(SetUniqueMod_2);
 
-                public static bool unique_mods_roll_3 = false;
                 public static GameObject unique_mod_3 = null;
                 public static Text unique_mod_3_Text = null;
                 public static Slider unique_mod_3_slider = null;
                 public static readonly System.Action<float> unique_mod_3_Action = new System.Action<float>(SetUniqueMod_3);
 
-                public static bool unique_mods_roll_4 = false;
                 public static GameObject unique_mod_4 = null;
                 public static Text unique_mod_4_Text = null;
                 public static Slider unique_mod_4_slider = null;
                 public static readonly System.Action<float> unique_mod_4_Action = new System.Action<float>(SetUniqueMod_4);
 
-                public static bool unique_mods_roll_5 = false;
                 public static GameObject unique_mod_5 = null;
                 public static Text unique_mod_5_Text = null;
                 public static Slider unique_mod_5_slider = null;
                 public static readonly System.Action<float> unique_mod_5_Action = new System.Action<float>(SetUniqueMod_5);
 
-                public static bool unique_mods_roll_6 = false;
                 public static GameObject unique_mod_6 = null;
                 public static Text unique_mod_6_Text = null;
                 public static Slider unique_mod_6_slider = null;
                 public static readonly System.Action<float> unique_mod_6_Action = new System.Action<float>(SetUniqueMod_6);
 
-                public static bool unique_mods_roll_7 = false;
                 public static GameObject unique_mod_7 = null;
                 public static Text unique_mod_7_Text = null;
                 public static Slider unique_mod_7_slider = null;
                 public static readonly System.Action<float> unique_mod_7_Action = new System.Action<float>(SetUniqueMod_7);
-
-                //Beast Evolutions
-                public static GameObject beast_evolution_border = null;
-                public static int evo_count = 0;
-
-                public static GameObject nb_evolution = null;
-                public static Text nb_evolution_Text = null;
-                public static Slider nb_evolution_slider = null;
-                public static readonly System.Action<float> nb_evolution_Action = new System.Action<float>(SetNbEvolution);
-
-                public static bool beast_evolution_0_enable = false;
-                public static GameObject beast_evolution_0 = null;
-                public static Dropdown beast_evolution_0_dropdown = null;
-                public static int beast_evolution_0_select = 0;
-                public static bool beast_evolution_select_0_enable = false;
-                public static GameObject beast_evolution_select_0 = null;
-                public static Dropdown beast_evolution_0_select_dropdown = null;
-
-                public static bool beast_evolution_1_enable = false;
-                public static GameObject beast_evolution_1 = null;
-                public static Dropdown beast_evolution_1_dropdown = null;
-                public static int beast_evolution_1_select = 0;
-                public static bool beast_evolution_select_1_enable = false;
-                public static GameObject beast_evolution_select_1 = null;
-                public static Dropdown beast_evolution_1_select_dropdown = null;
-
-                public static bool beast_evolution_2_enable = false;
-                public static GameObject beast_evolution_2 = null;
-                public static Dropdown beast_evolution_2_dropdown = null;
-                public static int beast_evolution_2_select = 0;
-                public static bool beast_evolution_select_2_enable = false;
-                public static GameObject beast_evolution_select_2 = null;
-                public static Dropdown beast_evolution_2_select_dropdown = null;
-
-                public static bool beast_evolution_3_enable = false;
-                public static GameObject beast_evolution_3 = null;
-                public static Dropdown beast_evolution_3_dropdown = null;
-                public static int beast_evolution_3_select = 0;
-                public static bool beast_evolution_select_3_enable = false;
-                public static GameObject beast_evolution_select_3 = null;
-                public static Dropdown beast_evolution_3_select_dropdown = null;
-
-                public static bool beast_evolution_4_enable = false;
-                public static GameObject beast_evolution_4 = null;
-                public static Dropdown beast_evolution_4_dropdown = null;
-                public static int beast_evolution_4_select = 0;
-                public static bool beast_evolution_select_4_enable = false;
-                public static GameObject beast_evolution_select_4 = null;
-                public static Dropdown beast_evolution_4_select_dropdown = null;
-
-                public static bool beast_evolution_5_enable = false;
-                public static GameObject beast_evolution_5 = null;
-                public static Dropdown beast_evolution_5_dropdown = null;
-                public static int beast_evolution_5_select = 0;
-                public static bool beast_evolution_select_5_enable = false;
-                public static GameObject beast_evolution_select_5 = null;
-                public static Dropdown beast_evolution_5_select_dropdown = null;
-
-                public static bool beast_evolution_6_enable = false;
-                public static GameObject beast_evolution_6 = null;
-                public static Dropdown beast_evolution_6_dropdown = null;
-                public static int beast_evolution_6_select = 0;
-                public static bool beast_evolution_select_6_enable = false;
-                public static GameObject beast_evolution_select_6 = null;
-                public static Dropdown beast_evolution_6_select_dropdown = null;
-
-                //Legendary Potencial
+                                
                 public static UniqueList.LegendaryType item_legendary_type = UniqueList.LegendaryType.LegendaryPotential;
 
                 public static bool legenday_potencial_enable = false;
@@ -5542,7 +5100,6 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider legenday_potencial_slider = null;
                 public static readonly System.Action<float> legenday_potencial_Action = new System.Action<float>(SetLegendayPotencial);
 
-                //Weaver will
                 public static bool weaver_will_enable = false;
                 public static bool weaver_will_roll = false;
                 public static GameObject weaver_will = null;
@@ -5553,20 +5110,12 @@ namespace LastEpoch_Hud.Scripts
                 public static Slider weaver_will_slider = null;
                 public static readonly System.Action<float> weaver_will_Action = new System.Action<float>(SetWeaverWill);
 
-                //Corrupted
-                public static bool corrupted_enable = false;
-                public static GameObject corrupted = null;
-                public static Toggle toggle_corrupted = null;
-                public static GameObject corrupted_border = null;
-
-                //Quantity
                 public static bool quantity_enable = false;
                 public static GameObject quantity = null;
                 public static GameObject quantity_border = null;
                 public static Text quantity_text = null;
                 public static Slider forcedrop_quantity_slider = null;
 
-                //Drop button
                 public static Button forcedrop_drop_button = null;
                 public static bool btn_enable = false;
                 public static readonly System.Action Drop_OnClick_Action = new System.Action(Drop);
@@ -5575,17 +5124,11 @@ namespace LastEpoch_Hud.Scripts
                 public static GameObject shard_filters = null;
                 public static Dropdown shards_filter_type = null;
                 public static Dropdown shards_filter_class = null;
-                //public static InputField shards_filter_name = null;
-                public static TMP_InputField shards_filter_name = null;
+                public static InputField shards_filter_name = null;
                 public static Button shards_filters_button = null;
                 public static readonly System.Action Resfresh_OnClick_Action = new System.Action(InitializeShardsView);
 
                 //Shards View
-                public static readonly UnityEngine.Color color_red = new UnityEngine.Color(0.8980392f, 0.2705882f, 0f, 1f); //!naturally             
-                public static readonly UnityEngine.Color color_yellow = new UnityEngine.Color(1f, 0.9607843f, 0.6078432f, 1f); //prefix
-                public static readonly UnityEngine.Color color_blue = new UnityEngine.Color(0f, 0.8784314f, 1f, 1f); //suffix / idol
-                public static readonly UnityEngine.Color color_green = new UnityEngine.Color(0.07058824f, 0.8980392f, 0f, 1f); //special
-
                 public static GameObject shard_prefab = null;
                 public static readonly string shard_btn_name = "ShardBtn_";
                 public static bool shard_initialized = false;
@@ -5601,294 +5144,212 @@ namespace LastEpoch_Hud.Scripts
                         content_obj = Functions.GetChild(Content.content_obj, "Old_ForceDrop_Content");
                         if (!content_obj.IsNullOrDestroyed())
                         {
-                            GameObject left_obj = Functions.GetChild(content_obj, "Left");
-                            if (!left_obj.IsNullOrDestroyed())
+                            left_base_content = Functions.GetViewportContent(content_obj, "Left", "Item");
+                            if (!left_base_content.IsNullOrDestroyed())
                             {
-                                //Item
-                                left_base_content = Functions.GetViewportContent(left_obj, "Content", "Item");
-                                if (!left_base_content.IsNullOrDestroyed())
-                                {
-                                    type_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Type", "Dropdown_Items_ForceDrop_Type", new System.Action<int>((_) => { SelectType(); }));
-                                    if (type_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error type_dropdown not found"); }
+                                type_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Type", "Dropdown_Items_ForceDrop_Type", new System.Action<int>((_) => { SelectType(); }));
+                                if (type_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error type_dropdown not found"); }
 
-                                    rarity_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Rarity", "Dropdown_Items_ForceDrop_Rarity", new System.Action<int>((_) => { SelectRarity(); }));
-                                    if (rarity_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error rarity_dropdown not found"); }
+                                rarity_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Rarity", "Dropdown_Items_ForceDrop_Rarity", new System.Action<int>((_) => { SelectRarity(); }));
+                                if (rarity_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error rarity_dropdown not found"); }
 
-                                    items_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Item", "Dropdown_Items_ForceDrop_Item", new System.Action<int>((_) => { SelectItem(); }));
-                                    if (items_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error items_dropdown not found"); }
+                                items_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Item", "Dropdown_Items_ForceDrop_Item", new System.Action<int>((_) => { SelectItem(); }));
+                                if (items_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error items_dropdown not found"); }
 
-                                    implicits = Functions.GetChild(left_base_content, "EnableImplicits");
-                                    implicits_border = Functions.GetChild(left_base_content, "ImplicitsBorder");
-                                    implicits_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableImplicits", "Dropdown", new System.Action<int>((_) => { EnableImplicits(); }));
-                                    if (implicits_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error implicits_dropdown not found"); }
+                                implicits = Functions.GetChild(left_base_content, "EnableImplicits");
+                                implicits_border = Functions.GetChild(left_base_content, "ImplicitsBorder");
+                                implicits_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableImplicits", "Dropdown", new System.Action<int>((_) => { EnableImplicits(); }));
+                                if (implicits_dropdown.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error implicits_dropdown not found"); }
 
-                                    implicit_0 = Functions.GetChild(left_base_content, "Implicit_0");
-                                    implicit_0_Text = Functions.Get_TextInPanel(left_base_content, "Implicit_0", "Value");
-                                    implicit_0_slider = Functions.Get_SliderInPanel(left_base_content, "Implicit_0", "Slider");
+                                implicit_0 = Functions.GetChild(left_base_content, "Implicit_0");
+                                implicit_0_Text = Functions.Get_TextInPanel(left_base_content, "Implicit_0", "Value");
+                                implicit_0_slider = Functions.Get_SliderInPanel(left_base_content, "Implicit_0", "Slider");
 
-                                    implicit_1 = Functions.GetChild(left_base_content, "Implicit_1");
-                                    implicit_1_Text = Functions.Get_TextInPanel(left_base_content, "Implicit_1", "Value");
-                                    implicit_1_slider = Functions.Get_SliderInPanel(left_base_content, "Implicit_1", "Slider");
+                                implicit_1 = Functions.GetChild(left_base_content, "Implicit_1");
+                                implicit_1_Text = Functions.Get_TextInPanel(left_base_content, "Implicit_1", "Value");
+                                implicit_1_slider = Functions.Get_SliderInPanel(left_base_content, "Implicit_1", "Slider");
 
-                                    implicit_2 = Functions.GetChild(left_base_content, "Implicit_2");
-                                    implicit_2_Text = Functions.Get_TextInPanel(left_base_content, "Implicit_2", "Value");
-                                    implicit_2_slider = Functions.Get_SliderInPanel(left_base_content, "Implicit_2", "Slider");
+                                implicit_2 = Functions.GetChild(left_base_content, "Implicit_2");
+                                implicit_2_Text = Functions.Get_TextInPanel(left_base_content, "Implicit_2", "Value");
+                                implicit_2_slider = Functions.Get_SliderInPanel(left_base_content, "Implicit_2", "Slider");
 
-                                    forgin_potencial = Functions.GetChild(left_base_content, "EnableForginPotencial");
-                                    forgin_potencial_border = Functions.GetChild(left_base_content, "ForginPotencialBorder");
-                                    forgin_potencial_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableForginPotencial", "Dropdown", new System.Action<int>((_) => { EnableForginPotencial(); }));
-                                    forgin_potencial_value = Functions.GetChild(left_base_content, "ForginPotencial");
-                                    forgin_potencial_text = Functions.Get_TextInPanel(left_base_content, "ForginPotencial", "Value");
-                                    forgin_potencial_slider = Functions.Get_SliderInPanel(left_base_content, "ForginPotencial", "Slider");
+                                forgin_potencial = Functions.GetChild(left_base_content, "EnableForginPotencial");
+                                forgin_potencial_border = Functions.GetChild(left_base_content, "ForginPotencialBorder");
+                                forgin_potencial_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableForginPotencial", "Dropdown", new System.Action<int>((_) => { EnableForginPotencial(); }));
+                                forgin_potencial_value = Functions.GetChild(left_base_content, "ForginPotencial");
+                                forgin_potencial_text = Functions.Get_TextInPanel(left_base_content, "ForginPotencial", "Value");
+                                forgin_potencial_slider = Functions.Get_SliderInPanel(left_base_content, "ForginPotencial", "Slider");
 
-                                    seal = Functions.GetChild(left_base_content, "EnableSeal");
-                                    seal_border = Functions.GetChild(left_base_content, "SealBorder");
-                                    seal_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableSeal", "Dropdown", new System.Action<int>((_) => { EnableSeal(); }));
-                                    seal_shard = Functions.GetChild(left_base_content, "SelectSeal");
-                                    seal_select_btn = Functions.Get_ButtonInPanel(seal_shard, "Button");
-                                    seal_select_text = Functions.Get_TextInButton(seal_shard, "Button", "Text");
-                                    seal_tier = Functions.GetChild(left_base_content, "SealTier");
-                                    seal_tier_text = Functions.Get_TextInPanel(left_base_content, "SealTier", "Value");
-                                    seal_tier_slider = Functions.Get_SliderInPanel(left_base_content, "SealTier", "Slider");
-                                    seal_value = Functions.GetChild(left_base_content, "SealValue");
-                                    seal_value_text = Functions.Get_TextInPanel(left_base_content, "SealValue", "Value");
-                                    seal_value_slider = Functions.Get_SliderInPanel(left_base_content, "SealValue", "Slider");
+                                seal = Functions.GetChild(left_base_content, "EnableSeal");
+                                seal_border = Functions.GetChild(left_base_content, "SealBorder");
+                                seal_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableSeal", "Dropdown", new System.Action<int>((_) => { EnableSeal(); }));
+                                seal_shard = Functions.GetChild(left_base_content, "SelectSeal");
+                                seal_select_btn = Functions.Get_ButtonInPanel(seal_shard, "Button");
+                                seal_select_text = Functions.Get_TextInButton(seal_shard, "Button", "Text");
+                                seal_tier = Functions.GetChild(left_base_content, "SealTier");
+                                seal_tier_text = Functions.Get_TextInPanel(left_base_content, "SealTier", "Value");
+                                seal_tier_slider = Functions.Get_SliderInPanel(left_base_content, "SealTier", "Slider");
+                                seal_value = Functions.GetChild(left_base_content, "SealValue");
+                                seal_value_text = Functions.Get_TextInPanel(left_base_content, "SealValue", "Value");
+                                seal_value_slider = Functions.Get_SliderInPanel(left_base_content, "SealValue", "Slider");
 
-                                    affixs = Functions.GetChild(left_base_content, "EnableAffixs");
-                                    if (affixs.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs is null"); }
-                                    affixs_border = Functions.GetChild(left_base_content, "AffixsBorder");
-                                    if (affixs_border.IsNullOrDestroyed()) { Main.logger_instance.Error("seal_border is null"); }
-                                    affixs_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableAffixs", "Dropdown", new System.Action<int>((_) => { EnableAffixs(); }));
-                                    if (affixs_dropdown.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_dropdown is null"); }
-                                    affixs_numbers = Functions.GetChild(left_base_content, "AffixsNb");
-                                    if (affixs_numbers.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_numbers is null"); }
-                                    affixs_numbers_text = Functions.Get_TextInPanel(left_base_content, "AffixsNb", "Value");
-                                    if (affixs_numbers_text.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_numbers_text is null"); }
-                                    affixs_numbers_slider = Functions.Get_SliderInPanel(left_base_content, "AffixsNb", "Slider");
-                                    if (affixs_numbers_slider.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_numbers_slider is null"); }
+                                affixs = Functions.GetChild(left_base_content, "EnableAffixs");
+                                if (affixs.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs is null"); }
+                                affixs_border = Functions.GetChild(left_base_content, "AffixsBorder");
+                                if (affixs_border.IsNullOrDestroyed()) { Main.logger_instance.Error("seal_border is null"); }
+                                affixs_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableAffixs", "Dropdown", new System.Action<int>((_) => { EnableAffixs(); }));
+                                if (affixs_dropdown.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_dropdown is null"); }
+                                affixs_numbers = Functions.GetChild(left_base_content, "AffixsNb");
+                                if (affixs_numbers.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_numbers is null"); }
+                                affixs_numbers_text = Functions.Get_TextInPanel(left_base_content, "AffixsNb", "Value");
+                                if (affixs_numbers_text.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_numbers_text is null"); }
+                                affixs_numbers_slider = Functions.Get_SliderInPanel(left_base_content, "AffixsNb", "Slider");
+                                if (affixs_numbers_slider.IsNullOrDestroyed()) { Main.logger_instance.Error("affixs_numbers_slider is null"); }
+                                affix_0 = Functions.GetChild(left_base_content, "Affix_0");
+                                affix_0_button = Functions.Get_ButtonInPanel(affix_0, "Button");
+                                affix_0_select_text = Functions.Get_TextInButton(affix_0, "Button", "Text");
+                                affix_0_tier_text = Functions.Get_TextInPanel(left_base_content, "Affix_0", "TierValue");
+                                affix_0_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_0", "TierSlider");
+                                affix_0_value_text = Functions.Get_TextInPanel(left_base_content, "Affix_0", "Value");
+                                affix_0_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_0", "ValueSlider");
+                                affix_1 = Functions.GetChild(left_base_content, "Affix_1");
+                                affix_1_button = Functions.Get_ButtonInPanel(affix_1, "Button");
+                                affix_1_select_text = Functions.Get_TextInButton(affix_1, "Button", "Text");
+                                affix_1_tier_text = Functions.Get_TextInPanel(left_base_content, "Affix_1", "TierValue");
+                                affix_1_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_1", "TierSlider");
+                                affix_1_value_text = Functions.Get_TextInPanel(left_base_content, "Affix_1", "Value");
+                                affix_1_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_1", "ValueSlider");
+                                affix_2 = Functions.GetChild(left_base_content, "Affix_2");
+                                affix_2_button = Functions.Get_ButtonInPanel(affix_2, "Button");
+                                affix_2_select_text = Functions.Get_TextInButton(affix_2, "Button", "Text");
+                                affix_2_tier_text = Functions.Get_TextInPanel(left_base_content, "Affix_2", "TierValue");
+                                affix_2_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_2", "TierSlider");
+                                affix_2_value_text = Functions.Get_TextInPanel(left_base_content, "Affix_2", "Value");
+                                affix_2_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_2", "ValueSlider");
+                                affix_3 = Functions.GetChild(left_base_content, "Affix_3");
+                                affix_3_button = Functions.Get_ButtonInPanel(affix_3, "Button");
+                                affix_3_select_text = Functions.Get_TextInButton(affix_3, "Button", "Text");
+                                affix_3_tier_text = Functions.Get_TextInPanel(left_base_content, "Affix_3", "TierValue");
+                                affix_3_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_3", "TierSlider");
+                                affix_3_value_text = Functions.Get_TextInPanel(left_base_content, "Affix_3", "Value");
+                                affix_3_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_3", "ValueSlider");
+                                affix_4 = Functions.GetChild(left_base_content, "Affix_4");
+                                affix_4_button = Functions.Get_ButtonInPanel(affix_4, "Button");
+                                affix_4_select_text = Functions.Get_TextInButton(affix_4, "Button", "Text");
+                                affix_4_tier_text = Functions.Get_TextInPanel(left_base_content, "Affix_4", "TierValue");
+                                affix_4_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_4", "TierSlider");
+                                affix_4_value_text = Functions.Get_TextInPanel(left_base_content, "Affix_4", "Value");
+                                affix_4_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_4", "ValueSlider");
+                                affix_5 = Functions.GetChild(left_base_content, "Affix_5");
+                                affix_5_button = Functions.Get_ButtonInPanel(affix_5, "Button");
+                                affix_5_select_text = Functions.Get_TextInButton(affix_5, "Button", "Text");
+                                affix_5_tier_text = Functions.Get_TextInPanel(left_base_content, "Affix_5", "TierValue");
+                                affix_5_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_5", "TierSlider");
+                                affix_5_value_text = Functions.Get_TextInPanel(left_base_content, "Affix_5", "Value");
+                                affix_5_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_5", "ValueSlider");
 
-                                    affix_0 = Functions.GetChild(left_base_content, "Affix_0");
-                                    affix_0_button = Functions.Get_ButtonInPanel(affix_0, "Button");
-                                    affix_0_select_text = Functions.Get_TextInButton(affix_0, "Button", "Text");
-                                    affix_0_tier_text = Functions.Get_TextInPanel(affix_0, "Tier", "Value");
-                                    affix_0_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_0", "TierSlider");
-                                    affix_0_value_text = Functions.Get_TextInPanel(affix_0, "Roll", "Value");
-                                    affix_0_random_toggle = Functions.Get_ToggleInPanel(affix_0, "RandomRoll", "Toggle_Random");
-                                    affix_0_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_0", "ValueSlider");
+                                unique_mods = Functions.GetChild(left_base_content, "EnableUniqueMods");
+                                unique_mods_border = Functions.GetChild(left_base_content, "UniqueModsBorder");
+                                unique_mods_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableUniqueMods", "Dropdown", new System.Action<int>((_) => { EnableUniqueMods(); }));
+                                unique_mod_0 = Functions.GetChild(left_base_content, "UniqueMod_0");
+                                unique_mod_0_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_0", "Value");
+                                unique_mod_0_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_0", "Slider");
+                                unique_mod_1 = Functions.GetChild(left_base_content, "UniqueMod_1");
+                                unique_mod_1_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_1", "Value");
+                                unique_mod_1_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_1", "Slider");
+                                unique_mod_2 = Functions.GetChild(left_base_content, "UniqueMod_2");
+                                unique_mod_2_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_2", "Value");
+                                unique_mod_2_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_2", "Slider");
+                                unique_mod_3 = Functions.GetChild(left_base_content, "UniqueMod_3");
+                                unique_mod_3_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_3", "Value");
+                                unique_mod_3_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_3", "Slider");
+                                unique_mod_4 = Functions.GetChild(left_base_content, "UniqueMod_4");
+                                unique_mod_4_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_4", "Value");
+                                unique_mod_4_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_4", "Slider");
+                                unique_mod_5 = Functions.GetChild(left_base_content, "UniqueMod_5");
+                                unique_mod_5_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_5", "Value");
+                                unique_mod_5_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_5", "Slider");
+                                unique_mod_6 = Functions.GetChild(left_base_content, "UniqueMod_6");
+                                unique_mod_6_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_6", "Value");
+                                unique_mod_6_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_6", "Slider");
+                                unique_mod_7 = Functions.GetChild(left_base_content, "UniqueMod_7");
+                                unique_mod_7_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_7", "Value");
+                                unique_mod_7_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_7", "Slider");
 
-                                    affix_1 = Functions.GetChild(left_base_content, "Affix_1");
-                                    affix_1_button = Functions.Get_ButtonInPanel(affix_1, "Button");
-                                    affix_1_select_text = Functions.Get_TextInButton(affix_1, "Button", "Text");
-                                    affix_1_tier_text = Functions.Get_TextInPanel(affix_1, "Tier", "Value");
-                                    affix_1_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_1", "TierSlider");
-                                    affix_1_value_text = Functions.Get_TextInPanel(affix_1, "Roll", "Value");
-                                    affix_1_random_toggle = Functions.Get_ToggleInPanel(affix_1, "RandomRoll", "Toggle_Random");
-                                    affix_1_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_1", "ValueSlider");
+                                legenday_potencial = Functions.GetChild(left_base_content, "EnableLegendaryPotencial");
+                                legenday_potencial_border = Functions.GetChild(left_base_content, "LegendaryPotencialBorder");
+                                legenday_potencial_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableLegendaryPotencial", "Dropdown", new System.Action<int>((_) => { EnableLegendaryPotencial(); }));
+                                legenday_potencial_value = Functions.GetChild(left_base_content, "LegendaryPotencial");
+                                legenday_potencial_Text = Functions.Get_TextInPanel(left_base_content, "LegendaryPotencial", "Value");
+                                legenday_potencial_slider = Functions.Get_SliderInPanel(left_base_content, "LegendaryPotencial", "Slider");
 
-                                    affix_2 = Functions.GetChild(left_base_content, "Affix_2");
-                                    affix_2_button = Functions.Get_ButtonInPanel(affix_2, "Button");
-                                    affix_2_select_text = Functions.Get_TextInButton(affix_2, "Button", "Text");
-                                    affix_2_tier_text = Functions.Get_TextInPanel(affix_2, "Tier", "Value");
-                                    affix_2_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_2", "TierSlider");
-                                    affix_2_value_text = Functions.Get_TextInPanel(affix_2, "Roll", "Value");
-                                    affix_2_random_toggle = Functions.Get_ToggleInPanel(affix_2, "RandomRoll", "Toggle_Random");
-                                    affix_2_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_2", "ValueSlider");
+                                weaver_will = Functions.GetChild(left_base_content, "EnableWeaverWill");
+                                weaver_will_border = Functions.GetChild(left_base_content, "WeaverWillBorder");
+                                weaver_will_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableWeaverWill", "Dropdown", new System.Action<int>((_) => { EnableWeaverWill(); }));
+                                weaver_will_value = Functions.GetChild(left_base_content, "WeaverWill");
+                                weaver_will_Text = Functions.Get_TextInPanel(left_base_content, "WeaverWill", "Value");
+                                weaver_will_slider = Functions.Get_SliderInPanel(left_base_content, "WeaverWill", "Slider");
 
-                                    affix_3 = Functions.GetChild(left_base_content, "Affix_3");
-                                    affix_3_button = Functions.Get_ButtonInPanel(affix_3, "Button");
-                                    affix_3_select_text = Functions.Get_TextInButton(affix_3, "Button", "Text");
-                                    affix_3_tier_text = Functions.Get_TextInPanel(affix_3, "Tier", "Value");
-                                    affix_3_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_3", "TierSlider");
-                                    affix_3_value_text = Functions.Get_TextInPanel(affix_3, "Roll", "Value");
-                                    affix_3_random_toggle = Functions.Get_ToggleInPanel(affix_3, "RandomRoll", "Toggle_Random");
-                                    affix_3_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_3", "ValueSlider");
-
-                                    affix_4 = Functions.GetChild(left_base_content, "Affix_4");
-                                    affix_4_button = Functions.Get_ButtonInPanel(affix_4, "Button");
-                                    affix_4_select_text = Functions.Get_TextInButton(affix_4, "Button", "Text");
-                                    affix_4_tier_text = Functions.Get_TextInPanel(affix_4, "Tier", "Value");
-                                    affix_4_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_4", "TierSlider");
-                                    affix_4_value_text = Functions.Get_TextInPanel(affix_4, "Roll", "Value");
-                                    affix_4_random_toggle = Functions.Get_ToggleInPanel(affix_4, "RandomRoll", "Toggle_Random");
-                                    affix_4_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_4", "ValueSlider");
-
-                                    affix_5 = Functions.GetChild(left_base_content, "Affix_5");
-                                    affix_5_button = Functions.Get_ButtonInPanel(affix_5, "Button");
-                                    affix_5_select_text = Functions.Get_TextInButton(affix_5, "Button", "Text");
-                                    affix_5_tier_text = Functions.Get_TextInPanel(affix_5, "Tier", "Value");
-                                    affix_5_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_5", "TierSlider");
-                                    affix_5_value_text = Functions.Get_TextInPanel(affix_5, "Roll", "Value");
-                                    affix_5_random_toggle = Functions.Get_ToggleInPanel(affix_5, "RandomRoll", "Toggle_Random");
-                                    affix_5_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_5", "ValueSlider");
-
-                                    unique_mods = Functions.GetChild(left_base_content, "EnableUniqueMods");
-                                    unique_mods_border = Functions.GetChild(left_base_content, "UniqueModsBorder");
-                                    unique_mods_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableUniqueMods", "Dropdown", new System.Action<int>((_) => { EnableUniqueMods(); }));
-                                    unique_mod_0 = Functions.GetChild(left_base_content, "UniqueMod_0");
-                                    unique_mod_0_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_0", "Value");
-                                    unique_mod_0_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_0", "Slider");
-                                    unique_mod_1 = Functions.GetChild(left_base_content, "UniqueMod_1");
-                                    unique_mod_1_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_1", "Value");
-                                    unique_mod_1_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_1", "Slider");
-                                    unique_mod_2 = Functions.GetChild(left_base_content, "UniqueMod_2");
-                                    unique_mod_2_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_2", "Value");
-                                    unique_mod_2_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_2", "Slider");
-                                    unique_mod_3 = Functions.GetChild(left_base_content, "UniqueMod_3");
-                                    unique_mod_3_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_3", "Value");
-                                    unique_mod_3_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_3", "Slider");
-                                    unique_mod_4 = Functions.GetChild(left_base_content, "UniqueMod_4");
-                                    unique_mod_4_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_4", "Value");
-                                    unique_mod_4_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_4", "Slider");
-                                    unique_mod_5 = Functions.GetChild(left_base_content, "UniqueMod_5");
-                                    unique_mod_5_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_5", "Value");
-                                    unique_mod_5_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_5", "Slider");
-                                    unique_mod_6 = Functions.GetChild(left_base_content, "UniqueMod_6");
-                                    unique_mod_6_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_6", "Value");
-                                    unique_mod_6_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_6", "Slider");
-                                    unique_mod_7 = Functions.GetChild(left_base_content, "UniqueMod_7");
-                                    unique_mod_7_Text = Functions.Get_TextInPanel(left_base_content, "UniqueMod_7", "Value");
-                                    unique_mod_7_slider = Functions.Get_SliderInPanel(left_base_content, "UniqueMod_7", "Slider");
-
-                                    nb_evolution = Functions.GetChild(left_base_content, "Nb_Evo");
-                                    nb_evolution_Text = Functions.Get_TextInPanel(left_base_content, "Nb_Evo", "Value");
-                                    nb_evolution_slider = Functions.Get_SliderInPanel(left_base_content, "Nb_Evo", "Slider");
-
-                                    beast_evolution_border = Functions.GetChild(left_base_content, "BeastEvolBorder");
-                                    beast_evolution_0 = Functions.GetChild(left_base_content, "Enable_BeastEvo_0");
-                                    beast_evolution_0_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Enable_BeastEvo_0", "Dropdown", new System.Action<int>((_) => { EnableBeastEvolution_0(); }));
-                                    beast_evolution_select_0 = Functions.GetChild(left_base_content, "BeastEvo_0");
-                                    beast_evolution_0_select_dropdown = Functions.Get_DopboxInPanel(left_base_content, "BeastEvo_0", "Dropdown", new System.Action<int>((_) => { SelectBeastEvolution_0(); }));
-                                    beast_evolution_1 = Functions.GetChild(left_base_content, "Enable_BeastEvo_1");
-                                    beast_evolution_1_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Enable_BeastEvo_1", "Dropdown", new System.Action<int>((_) => { EnableBeastEvolution_1(); }));
-                                    beast_evolution_select_1 = Functions.GetChild(left_base_content, "BeastEvo_1");
-                                    beast_evolution_1_select_dropdown = Functions.Get_DopboxInPanel(left_base_content, "BeastEvo_1", "Dropdown", new System.Action<int>((_) => { SelectBeastEvolution_1(); }));
-                                    beast_evolution_2 = Functions.GetChild(left_base_content, "Enable_BeastEvo_2");
-                                    beast_evolution_2_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Enable_BeastEvo_2", "Dropdown", new System.Action<int>((_) => { EnableBeastEvolution_2(); }));
-                                    beast_evolution_select_2 = Functions.GetChild(left_base_content, "BeastEvo_2");
-                                    beast_evolution_2_select_dropdown = Functions.Get_DopboxInPanel(left_base_content, "BeastEvo_2", "Dropdown", new System.Action<int>((_) => { SelectBeastEvolution_2(); }));
-                                    beast_evolution_3 = Functions.GetChild(left_base_content, "Enable_BeastEvo_3");
-                                    beast_evolution_3_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Enable_BeastEvo_3", "Dropdown", new System.Action<int>((_) => { EnableBeastEvolution_3(); }));
-                                    beast_evolution_select_3 = Functions.GetChild(left_base_content, "BeastEvo_3");
-                                    beast_evolution_3_select_dropdown = Functions.Get_DopboxInPanel(left_base_content, "BeastEvo_3", "Dropdown", new System.Action<int>((_) => { SelectBeastEvolution_3(); }));
-                                    beast_evolution_4 = Functions.GetChild(left_base_content, "Enable_BeastEvo_4");
-                                    beast_evolution_4_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Enable_BeastEvo_4", "Dropdown", new System.Action<int>((_) => { EnableBeastEvolution_4(); }));
-                                    beast_evolution_select_4 = Functions.GetChild(left_base_content, "BeastEvo_4");
-                                    beast_evolution_4_select_dropdown = Functions.Get_DopboxInPanel(left_base_content, "BeastEvo_4", "Dropdown", new System.Action<int>((_) => { SelectBeastEvolution_4(); }));
-                                    beast_evolution_5 = Functions.GetChild(left_base_content, "Enable_BeastEvo_5");
-                                    beast_evolution_5_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Enable_BeastEvo_5", "Dropdown", new System.Action<int>((_) => { EnableBeastEvolution_5(); }));
-                                    beast_evolution_select_5 = Functions.GetChild(left_base_content, "BeastEvo_5");
-                                    beast_evolution_5_select_dropdown = Functions.Get_DopboxInPanel(left_base_content, "BeastEvo_5", "Dropdown", new System.Action<int>((_) => { SelectBeastEvolution_5(); }));
-                                    beast_evolution_6 = Functions.GetChild(left_base_content, "Enable_BeastEvo_6");
-                                    beast_evolution_6_dropdown = Functions.Get_DopboxInPanel(left_base_content, "Enable_BeastEvo_6", "Dropdown", new System.Action<int>((_) => { EnableBeastEvolution_6(); }));
-                                    beast_evolution_select_6 = Functions.GetChild(left_base_content, "BeastEvo_6");
-                                    beast_evolution_6_select_dropdown = Functions.Get_DopboxInPanel(left_base_content, "BeastEvo_6", "Dropdown", new System.Action<int>((_) => { SelectBeastEvolution_6(); }));
-
-                                    legenday_potencial = Functions.GetChild(left_base_content, "EnableLegendaryPotencial");
-                                    legenday_potencial_border = Functions.GetChild(left_base_content, "LegendaryPotencialBorder");
-                                    legenday_potencial_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableLegendaryPotencial", "Dropdown", new System.Action<int>((_) => { EnableLegendaryPotencial(); }));
-                                    legenday_potencial_value = Functions.GetChild(left_base_content, "LegendaryPotencial");
-                                    legenday_potencial_Text = Functions.Get_TextInPanel(left_base_content, "LegendaryPotencial", "Value");
-                                    legenday_potencial_slider = Functions.Get_SliderInPanel(left_base_content, "LegendaryPotencial", "Slider");
-
-                                    weaver_will = Functions.GetChild(left_base_content, "EnableWeaverWill");
-                                    weaver_will_border = Functions.GetChild(left_base_content, "WeaverWillBorder");
-                                    weaver_will_dropdown = Functions.Get_DopboxInPanel(left_base_content, "EnableWeaverWill", "Dropdown", new System.Action<int>((_) => { EnableWeaverWill(); }));
-                                    weaver_will_value = Functions.GetChild(left_base_content, "WeaverWill");
-                                    weaver_will_Text = Functions.Get_TextInPanel(left_base_content, "WeaverWill", "Value");
-                                    weaver_will_slider = Functions.Get_SliderInPanel(left_base_content, "WeaverWill", "Slider");
-
-                                    corrupted = Functions.GetChild(left_base_content, "Corrupted");
-                                    toggle_corrupted = Functions.GetChild(corrupted, "Toggle").GetComponent<Toggle>();
-                                    corrupted_border = Functions.GetChild(left_base_content, "CorruptedBorder");
-
-                                    quantity = Functions.GetChild(left_base_content, "Quantity");
-                                    quantity_border = Functions.GetChild(left_base_content, "QuantityBorder");
-                                    forcedrop_quantity_slider = Functions.Get_SliderInPanel(left_base_content, "Quantity", "Slider_Items_ForceDrop_Quantity");
-                                    if (forcedrop_quantity_slider.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error forcedrop_quantity_slider not found"); }
-                                    quantity_text = Functions.Get_TextInPanel(left_base_content, "Quantity", "Value");
-                                }
-                                else { error = true; Main.logger_instance.Error("left_content not found"); }
-
-                                //Drop button
-                                GameObject left_content = Functions.GetChild(left_obj, "Content");
-                                if (!left_content.IsNullOrDestroyed())
-                                {
-                                    GameObject new_obj = Functions.GetChild(left_content, "Btn");
-                                    if (!new_obj.IsNullOrDestroyed())
-                                    {
-                                        forcedrop_drop_button = Functions.Get_ButtonInPanel(new_obj, "Btn_Drop");
-                                        if (forcedrop_drop_button.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error forcedrop_drop_button not found"); }
-                                    }
-                                    else { error = true; Main.logger_instance.Error("left Btn panel not found"); }
-                                }
-                                else { error = true; Main.logger_instance.Error("left_content not found"); }
+                                quantity = Functions.GetChild(left_base_content, "Quantity");
+                                quantity_border = Functions.GetChild(left_base_content, "QuantityBorder");
+                                forcedrop_quantity_slider = Functions.Get_SliderInPanel(left_base_content, "Quantity", "Slider_Items_ForceDrop_Quantity");
+                                if (forcedrop_quantity_slider.IsNullOrDestroyed()) { error = true; Main.logger_instance.Error("Error forcedrop_quantity_slider not found"); }
+                                quantity_text = Functions.Get_TextInPanel(left_base_content, "Quantity", "Value");
                             }
-                            else { error = true; Main.logger_instance.Error("left_obj not found"); }                            
+                            else { error = true; Main.logger_instance.Error("left_content not found"); }
 
                             //Shards filters
                             GameObject center = Functions.GetChild(content_obj, "Center");
                             if (!center.IsNullOrDestroyed())
                             {
-                                center_content_1 = Functions.GetChild(center, "Content");
-                                if (!center_content_1.IsNullOrDestroyed())
+                                shard_filters = Functions.GetChild(center, "Filters");
+                                if (!shard_filters.IsNullOrDestroyed())
                                 {
-                                    shard_filters = Functions.GetChild(center_content_1, "Filters");
-                                    if (!shard_filters.IsNullOrDestroyed())
+                                    GameObject line_0 = Functions.GetChild(shard_filters, "Line_0");
+                                    if (!line_0.IsNullOrDestroyed())
                                     {
-                                        GameObject line_0 = Functions.GetChild(shard_filters, "Line_0");
-                                        if (!line_0.IsNullOrDestroyed())
-                                        {
-                                            shards_filter_type = Functions.Get_DopboxInPanel(line_0, "Type", "Dropdown", new System.Action<int>((value) => { }));
-                                            shards_filter_class = Functions.Get_DopboxInPanel(line_0, "Class", "Dropdown", new System.Action<int>((_) => { }));
-                                        }
-                                        else { error = true; Main.logger_instance.Error("line_0 not found"); }
-
-                                        GameObject line_1 = Functions.GetChild(shard_filters, "Line_1");
-                                        if (!line_1.IsNullOrDestroyed())
-                                        {
-                                            GameObject name = Functions.GetChild(line_1, "Name");
-                                            if (!name.IsNullOrDestroyed())
-                                            {
-                                                GameObject g = Functions.GetChild(name, "InputField");
-                                                if (!g.IsNullOrDestroyed()) { shards_filter_name = g.GetComponent<TMP_InputField>(); }
-                                                //if (!g.IsNullOrDestroyed()) { shards_filter_name = g.GetComponent<InputField>(); }
-                                                else { error = true; Main.logger_instance.Error("g_name not found"); }
-                                            }
-                                            else { error = true; Main.logger_instance.Error("name not found"); }
-
-                                            GameObject refresh = Functions.GetChild(line_1, "Refresh");
-                                            if (!refresh.IsNullOrDestroyed())
-                                            {
-                                                GameObject g = Functions.GetChild(refresh, "Button");
-                                                if (!g.IsNullOrDestroyed()) { shards_filters_button = g.GetComponent<Button>(); }
-                                                else { error = true; Main.logger_instance.Error("g_refresh not found"); }
-                                            }
-                                            else { error = true; Main.logger_instance.Error("refresh not found"); }
-                                        }
-                                        else { error = true; Main.logger_instance.Error("line_1 not found"); }
+                                        shards_filter_type = Functions.Get_DopboxInPanel(line_0, "Type", "Dropdown", new System.Action<int>((value) => { }));
+                                        shards_filter_class = Functions.Get_DopboxInPanel(line_0, "Class", "Dropdown", new System.Action<int>((_) => { }));
                                     }
-                                    else { error = true; Main.logger_instance.Error("shard_filters not found"); }
+                                    else { error = true; Main.logger_instance.Error("line_0 not found"); }
+
+                                    GameObject line_1 = Functions.GetChild(shard_filters, "Line_1");
+                                    if (!line_1.IsNullOrDestroyed())
+                                    {
+                                        GameObject name = Functions.GetChild(line_1, "Name");
+                                        if (!name.IsNullOrDestroyed())
+                                        {
+                                            GameObject g = Functions.GetChild(name, "InputField");
+                                            if (!g.IsNullOrDestroyed()) { shards_filter_name = g.GetComponent<InputField>(); }
+                                            else { error = true; Main.logger_instance.Error("g_name not found"); }
+                                        }
+                                        else { error = true; Main.logger_instance.Error("name not found"); }
+
+                                        GameObject refresh = Functions.GetChild(line_1, "Refresh");
+                                        if (!refresh.IsNullOrDestroyed())
+                                        {
+                                            GameObject g = Functions.GetChild(refresh, "Button");
+                                            if (!g.IsNullOrDestroyed()) { shards_filters_button = g.GetComponent<Button>(); }
+                                            else { error = true; Main.logger_instance.Error("g_refresh not found"); }
+                                        }
+                                        else { error = true; Main.logger_instance.Error("refresh not found"); }
+                                    }
+                                    else { error = true; Main.logger_instance.Error("line_1 not found"); }
                                 }
-                                //Shards
-                                center_content = Functions.GetViewportContent(center, "Content", "Content");
-                                if (!center_content.IsNullOrDestroyed())
-                                {
-                                    
-                                }
-                                else { error = true; Main.logger_instance.Error("center_content not found"); }
+                                else { error = true; Main.logger_instance.Error("shard_filters not found"); }
                             }
                             else { error = true; Main.logger_instance.Error("center not found"); }
 
                             //Shards
-                            /*center_content = Functions.GetViewportContent(content_obj, "Center", "Content");
+                            center_content = Functions.GetViewportContent(content_obj, "Center", "Content");
                             if (!center_content.IsNullOrDestroyed())
                             {
 
                             }
-                            else { error = true; Main.logger_instance.Error("center_content not found"); }*/
+                            else { error = true; Main.logger_instance.Error("center_content not found"); }
 
                             //Drop button
-                            /*GameObject left_obj = Functions.GetChild(content_obj, "Left");
+                            GameObject left_obj = Functions.GetChild(content_obj, "Left");
                             if (!left_obj.IsNullOrDestroyed())
                             {
                                 GameObject new_obj = Functions.GetChild(left_obj, "Btn");
@@ -5899,43 +5360,12 @@ namespace LastEpoch_Hud.Scripts
                                 }
                                 else { error = true; Main.logger_instance.Error("left Btn panel not found"); }
                             }
-                            else { error = true; Main.logger_instance.Error("left_obj not found"); }*/
+                            else { error = true; Main.logger_instance.Error("left_obj not found"); }
                         }
                         else { error = true; Main.logger_instance.Error("content_obj is null"); }
 
                         if (!error) { initialized = true; }
                     }
-                }
-                public static void Init_BeastDropdown()
-                {
-                    TimeBeastData time_beast_data = null;
-                    foreach (TimeBeastData data in Resources.FindObjectsOfTypeAll<TimeBeastData>())
-                    {
-                        time_beast_data = data;
-                        break;
-                    }
-                    if (!time_beast_data.IsNullOrDestroyed())
-                    {
-                        System.Collections.Generic.List<string> evos = new System.Collections.Generic.List<string>();
-                        foreach (TimeBeastData.AdaptationData adaptation in time_beast_data.adaptationData) { evos.Add(adaptation.displayName); }
-                        evo_count = evos.Count;
-                        Dropdown[] beast_dropdowns =
-                        {
-                            beast_evolution_0_select_dropdown,
-                            beast_evolution_1_select_dropdown,
-                            beast_evolution_2_select_dropdown,
-                            beast_evolution_3_select_dropdown,
-                            beast_evolution_4_select_dropdown,
-                            beast_evolution_5_select_dropdown,
-                            beast_evolution_6_select_dropdown
-                        };
-                        foreach (Dropdown dropdown in beast_dropdowns)
-                        {
-                            dropdown.options.Clear();
-                            foreach (string s in evos) { dropdown.options.Add(new Dropdown.OptionData(s)); }
-                        }
-                    }
-                    else { Main.logger_instance.Error("TimeBeastData not found"); }
                 }
                 public static void Set_Events()
                 {
@@ -5950,27 +5380,21 @@ namespace LastEpoch_Hud.Scripts
                         Events.Set_Slider_Event(seal_value_slider, seal_value_Action);                                                
                         Events.Set_Button_Event(affix_0_button, affix_0_OnClick_Action);
                         Events.Set_Slider_Event(affix_0_tier_slider, affix_0_tier_Action);
-                        Events.Set_Toggle_Event(affix_0_random_toggle, Affix_0_RandomRoll_Toggle_Action);
                         Events.Set_Slider_Event(affix_0_value_slider, affix_0_value_Action);
                         Events.Set_Button_Event(affix_1_button, affix_1_OnClick_Action);
                         Events.Set_Slider_Event(affix_1_tier_slider, affix_1_tier_Action);
-                        Events.Set_Toggle_Event(affix_1_random_toggle, Affix_1_RandomRoll_Toggle_Action);
                         Events.Set_Slider_Event(affix_1_value_slider, affix_1_value_Action);
                         Events.Set_Button_Event(affix_2_button, affix_2_OnClick_Action);
                         Events.Set_Slider_Event(affix_2_tier_slider, affix_2_tier_Action);
-                        Events.Set_Toggle_Event(affix_2_random_toggle, Affix_2_RandomRoll_Toggle_Action);
                         Events.Set_Slider_Event(affix_2_value_slider, affix_2_value_Action);
                         Events.Set_Button_Event(affix_3_button, affix_3_OnClick_Action);
                         Events.Set_Slider_Event(affix_3_tier_slider, affix_3_tier_Action);
-                        Events.Set_Toggle_Event(affix_3_random_toggle, Affix_3_RandomRoll_Toggle_Action);
                         Events.Set_Slider_Event(affix_3_value_slider, affix_3_value_Action);
                         Events.Set_Button_Event(affix_4_button, affix_4_OnClick_Action);
                         Events.Set_Slider_Event(affix_4_tier_slider, affix_4_tier_Action);
-                        Events.Set_Toggle_Event(affix_4_random_toggle, Affix_4_RandomRoll_Toggle_Action);
                         Events.Set_Slider_Event(affix_4_value_slider, affix_4_value_Action);
                         Events.Set_Button_Event(affix_5_button, affix_5_OnClick_Action);
                         Events.Set_Slider_Event(affix_5_tier_slider, affix_5_tier_Action);
-                        Events.Set_Toggle_Event(affix_5_random_toggle, Affix_5_RandomRoll_Toggle_Action);
                         Events.Set_Slider_Event(affix_5_value_slider, affix_5_value_Action);
                         Events.Set_Slider_Event(unique_mod_0_slider, unique_mod_0_Action);
                         Events.Set_Slider_Event(unique_mod_1_slider, unique_mod_1_Action);
@@ -5980,10 +5404,9 @@ namespace LastEpoch_Hud.Scripts
                         Events.Set_Slider_Event(unique_mod_5_slider, unique_mod_5_Action);
                         Events.Set_Slider_Event(unique_mod_6_slider, unique_mod_6_Action);
                         Events.Set_Slider_Event(unique_mod_7_slider, unique_mod_7_Action);
-                        Events.Set_Slider_Event(nb_evolution_slider, nb_evolution_Action);
                         Events.Set_Slider_Event(legenday_potencial_slider, legenday_potencial_Action);
                         Events.Set_Slider_Event(weaver_will_slider, weaver_will_Action);
-
+                                                
                         Events.Set_Button_Event(shards_filters_button, Resfresh_OnClick_Action);
 
                         Events.Set_Button_Event(forcedrop_drop_button, Drop_OnClick_Action);
@@ -6053,7 +5476,6 @@ namespace LastEpoch_Hud.Scripts
                                 if (item.BaseTypeName == type_str)
                                 {
                                     item_type = item.baseTypeID;
-                                    item_equipmenttype = item.type;
                                     found = true;
                                     break;
                                 }
@@ -6198,7 +5620,7 @@ namespace LastEpoch_Hud.Scripts
                                             ((item_rarity == 8) && (unique.isSetItem))))
                                         {
                                             string name = unique.displayName;
-                                            if ((name == "") || (name == "Pearls of the Swine") || (name == "Scales of Eterra")) { name = unique.name; } // if item's displayName is "Pearls of the Swine", use unique.name instead of unique.displayName
+                                            if (name == "") { name = unique.name; }
                                             options.Add(new Dropdown.OptionData { text = name });
                                         }
                                     }
@@ -6359,16 +5781,6 @@ namespace LastEpoch_Hud.Scripts
                     int t = System.Convert.ToInt32(affix_0_tier_slider.value) + 1;
                     affix_0_tier_text.text = t.ToString();
                 }
-                private static void Set_Affix_0_RandomRoll_Enable(bool enable)
-                {
-                    affix_0_value_slider.interactable = !affix_0_random_toggle.isOn;
-                    if (affix_0_random_toggle.isOn) { affix_0_value_text.text = "Random"; }
-                    else
-                    {
-                        int result = System.Convert.ToInt32((affix_0_value_slider.value / 255) * 100);
-                        affix_0_value_text.text = result.ToString() + " %";
-                    }
-                }
                 public static void SetAffix_0_Value(float f)
                 {
                     int result = System.Convert.ToInt32((affix_0_value_slider.value / 255) * 100);
@@ -6382,16 +5794,6 @@ namespace LastEpoch_Hud.Scripts
                 {
                     int t = System.Convert.ToInt32(affix_1_tier_slider.value) + 1;
                     affix_1_tier_text.text = t.ToString();
-                }
-                private static void Set_Affix_1_RandomRoll_Enable(bool enable)
-                {
-                    affix_1_value_slider.interactable = !affix_1_random_toggle.isOn;
-                    if (affix_1_random_toggle.isOn) { affix_1_value_text.text = "Random"; }
-                    else
-                    {
-                        int result = System.Convert.ToInt32((affix_1_value_slider.value / 255) * 100);
-                        affix_1_value_text.text = result.ToString() + " %";
-                    }
                 }
                 public static void SetAffix_1_Value(float f)
                 {
@@ -6407,16 +5809,6 @@ namespace LastEpoch_Hud.Scripts
                     int t = System.Convert.ToInt32(affix_2_tier_slider.value) + 1;
                     affix_2_tier_text.text = t.ToString();
                 }
-                private static void Set_Affix_2_RandomRoll_Enable(bool enable)
-                {
-                    affix_2_value_slider.interactable = !affix_2_random_toggle.isOn;
-                    if (affix_2_random_toggle.isOn) { affix_2_value_text.text = "Random"; }
-                    else
-                    {
-                        int result = System.Convert.ToInt32((affix_2_value_slider.value / 255) * 100);
-                        affix_2_value_text.text = result.ToString() + " %";
-                    }
-                }
                 public static void SetAffix_2_Value(float f)
                 {
                     int result = System.Convert.ToInt32((affix_2_value_slider.value / 255) * 100);
@@ -6430,16 +5822,6 @@ namespace LastEpoch_Hud.Scripts
                 {
                     int t = System.Convert.ToInt32(affix_3_tier_slider.value) + 1;
                     affix_3_tier_text.text = t.ToString();
-                }
-                private static void Set_Affix_3_RandomRoll_Enable(bool enable)
-                {
-                    affix_3_value_slider.interactable = !affix_3_random_toggle.isOn;
-                    if (affix_3_random_toggle.isOn) { affix_3_value_text.text = "Random"; }
-                    else
-                    {
-                        int result = System.Convert.ToInt32((affix_3_value_slider.value / 255) * 100);
-                        affix_3_value_text.text = result.ToString() + " %";
-                    }
                 }
                 public static void SetAffix_3_Value(float f)
                 {
@@ -6455,16 +5837,6 @@ namespace LastEpoch_Hud.Scripts
                     int t = System.Convert.ToInt32(affix_4_tier_slider.value) + 1;
                     affix_4_tier_text.text = t.ToString();
                 }
-                private static void Set_Affix_4_RandomRoll_Enable(bool enable)
-                {
-                    affix_4_value_slider.interactable = !affix_4_random_toggle.isOn;
-                    if (affix_4_random_toggle.isOn) { affix_4_value_text.text = "Random"; }
-                    else
-                    {
-                        int result = System.Convert.ToInt32((affix_4_value_slider.value / 255) * 100);
-                        affix_4_value_text.text = result.ToString() + " %";
-                    }
-                }
                 public static void SetAffix_4_Value(float f)
                 {
                     int result = System.Convert.ToInt32((affix_4_value_slider.value / 255) * 100);
@@ -6479,16 +5851,6 @@ namespace LastEpoch_Hud.Scripts
                     int t = System.Convert.ToInt32(affix_5_tier_slider.value) + 1;
                     affix_5_tier_text.text = t.ToString();
                 }
-                private static void Set_Affix_5_RandomRoll_Enable(bool enable)
-                {
-                    affix_5_value_slider.interactable = !affix_5_random_toggle.isOn;
-                    if (affix_5_random_toggle.isOn) { affix_5_value_text.text = "Random"; }
-                    else
-                    {
-                        int result = System.Convert.ToInt32((affix_5_value_slider.value / 255) * 100);
-                        affix_5_value_text.text = result.ToString() + " %";
-                    }
-                }
                 public static void SetAffix_5_Value(float f)
                 {
                     int result = System.Convert.ToInt32((affix_5_value_slider.value / 255) * 100);
@@ -6499,82 +5861,8 @@ namespace LastEpoch_Hud.Scripts
                     int index = unique_mods_dropdown.value;
                     if (index < unique_mods_dropdown.options.Count)
                     {
-                        if (index == 1)
-                        {
-                            if (item_unique_id != 444)
-                            {
-                                unique_mods_roll_0 = true;
-                                unique_mods_roll_1 = true;
-                                unique_mods_roll_2 = true;
-                                unique_mods_roll_3 = true;
-                                unique_mods_roll_4 = true;
-                                unique_mods_roll_5 = true;
-                                unique_mods_roll_6 = true;
-                                unique_mods_roll_7 = true;
-
-                                beast_evolution_0_enable = false;
-                                beast_evolution_1_enable = false;
-                                beast_evolution_2_enable = false;
-                                beast_evolution_3_enable = false;
-                                beast_evolution_4_enable = false;
-                                beast_evolution_5_enable = false;
-
-                                beast_evolution_select_0_enable = false;
-                                beast_evolution_select_1_enable = false;
-                                beast_evolution_select_2_enable = false;
-                                beast_evolution_select_3_enable = false;
-                                beast_evolution_select_4_enable = false;
-                                beast_evolution_select_5_enable = false;
-                            }
-                            else
-                            {
-                                unique_mods_roll_0 = true;
-                                unique_mods_roll_1 = false;
-                                unique_mods_roll_2 = true;
-                                unique_mods_roll_3 = false;
-                                unique_mods_roll_4 = false;
-                                unique_mods_roll_5 = false;
-                                unique_mods_roll_6 = false;
-                                unique_mods_roll_7 = false;
-
-                                beast_evolution_0_enable = true;
-                                beast_evolution_1_enable = true;
-                                beast_evolution_2_enable = true;
-                                beast_evolution_3_enable = true;
-                                beast_evolution_4_enable = true;
-                                beast_evolution_5_enable = true;
-
-                                EnableBeastEvolution_0();
-                                EnableBeastEvolution_1();
-                                EnableBeastEvolution_2();
-                                EnableBeastEvolution_3();
-                                EnableBeastEvolution_4();
-                                EnableBeastEvolution_5();
-                            }
-                        }
-                        else
-                        {
-                            unique_mods_roll_0 = false;
-                            unique_mods_roll_1 = false;
-                            unique_mods_roll_2 = false;
-                            unique_mods_roll_3 = false;
-                            unique_mods_roll_4 = false;
-                            unique_mods_roll_5 = false;
-
-                            beast_evolution_0_enable = false;
-                            beast_evolution_1_enable = false;
-                            beast_evolution_2_enable = false;
-                            beast_evolution_3_enable = false;
-                            beast_evolution_4_enable = false;
-                            beast_evolution_5_enable = false;
-
-                            beast_evolution_select_0_enable = false;
-                            beast_evolution_select_1_enable = false;
-                            beast_evolution_select_2_enable = false;
-                            beast_evolution_select_3_enable = false;
-                            beast_evolution_select_4_enable = false;
-                            beast_evolution_select_5_enable = false;
-                        }
+                        if (index == 1) { unique_mods_roll = true; }
+                        else { unique_mods_roll = false; }
                     }
                 }
                 public static void SetUniqueMod_0(float f)
@@ -6617,132 +5905,6 @@ namespace LastEpoch_Hud.Scripts
                     int result = System.Convert.ToInt32((unique_mod_7_slider.value / 255) * 100);
                     unique_mod_7_Text.text = result.ToString() + " %";
                 }
-
-                public static void SetNbEvolution(float f)
-                {
-                    int result = System.Convert.ToInt32(nb_evolution_slider.value);
-                    nb_evolution_Text.text = result.ToString();
-                }
-                public static void EnableBeastEvolution_0()
-                {
-                    int index = beast_evolution_0_dropdown.value;
-                    if (index < beast_evolution_0_dropdown.options.Count)
-                    {
-                        if (index == 1) { beast_evolution_0_enable = true; }
-                        else { beast_evolution_0_enable = false; }
-                    }
-                }
-                public static void SelectBeastEvolution_0()
-                {
-                    int index = beast_evolution_0_select_dropdown.value;
-                    if (index < beast_evolution_0_select_dropdown.options.Count)
-                    {
-                        beast_evolution_0_select = index;
-                    }
-                }
-                public static void EnableBeastEvolution_1()
-                {
-                    int index = beast_evolution_1_dropdown.value;
-                    if (index < beast_evolution_1_dropdown.options.Count)
-                    {
-                        if (index == 1) { beast_evolution_1_enable = true; }
-                        else { beast_evolution_1_enable = false; }
-                    }
-                }
-                public static void SelectBeastEvolution_1()
-                {
-                    int index = beast_evolution_1_select_dropdown.value;
-                    if (index < beast_evolution_1_select_dropdown.options.Count)
-                    {
-                        beast_evolution_1_select = index;
-                    }
-                }
-                public static void EnableBeastEvolution_2()
-                {
-                    int index = beast_evolution_2_dropdown.value;
-                    if (index < beast_evolution_2_dropdown.options.Count)
-                    {
-                        if (index == 1) { beast_evolution_2_enable = true; }
-                        else { beast_evolution_2_enable = false; }
-                    }
-                }
-                public static void SelectBeastEvolution_2()
-                {
-                    int index = beast_evolution_2_select_dropdown.value;
-                    if (index < beast_evolution_2_select_dropdown.options.Count)
-                    {
-                        beast_evolution_2_select = index;
-                    }
-                }
-                public static void EnableBeastEvolution_3()
-                {
-                    int index = beast_evolution_3_dropdown.value;
-                    if (index < beast_evolution_3_dropdown.options.Count)
-                    {
-                        if (index == 1) { beast_evolution_3_enable = true; }
-                        else { beast_evolution_3_enable = false; }
-                    }
-                }
-                public static void SelectBeastEvolution_3()
-                {
-                    int index = beast_evolution_3_select_dropdown.value;
-                    if (index < beast_evolution_3_select_dropdown.options.Count)
-                    {
-                        beast_evolution_3_select = index;
-                    }
-                }
-                public static void EnableBeastEvolution_4()
-                {
-                    int index = beast_evolution_4_dropdown.value;
-                    if (index < beast_evolution_4_dropdown.options.Count)
-                    {
-                        if (index == 1) { beast_evolution_4_enable = true; }
-                        else { beast_evolution_4_enable = false; }
-                    }
-                }
-                public static void SelectBeastEvolution_4()
-                {
-                    int index = beast_evolution_4_select_dropdown.value;
-                    if (index < beast_evolution_4_select_dropdown.options.Count)
-                    {
-                        beast_evolution_4_select = index;
-                    }
-                }
-                public static void EnableBeastEvolution_5()
-                {
-                    int index = beast_evolution_5_dropdown.value;
-                    if (index < beast_evolution_5_dropdown.options.Count)
-                    {
-                        if (index == 1) { beast_evolution_5_enable = true; }
-                        else { beast_evolution_5_enable = false; }
-                    }
-                }
-                public static void SelectBeastEvolution_5()
-                {
-                    int index = beast_evolution_5_select_dropdown.value;
-                    if (index < beast_evolution_5_select_dropdown.options.Count)
-                    {
-                        beast_evolution_5_select = index;
-                    }
-                }
-                public static void EnableBeastEvolution_6()
-                {
-                    int index = beast_evolution_6_dropdown.value;
-                    if (index < beast_evolution_6_dropdown.options.Count)
-                    {
-                        if (index == 1) { beast_evolution_6_enable = true; }
-                        else { beast_evolution_6_enable = false; }
-                    }
-                }
-                public static void SelectBeastEvolution_6()
-                {
-                    int index = beast_evolution_6_select_dropdown.value;
-                    if (index < beast_evolution_6_select_dropdown.options.Count)
-                    {
-                        beast_evolution_6_select = index;
-                    }
-                }
-
                 public static void EnableLegendaryPotencial()
                 {
                     int index = legenday_potencial_dropdown.value;
@@ -6807,8 +5969,8 @@ namespace LastEpoch_Hud.Scripts
                         wanted_name = shards_filter_name.text;
                     }
                     bool item_idol = false;
-                    if (((item_type > 24) && (item_type < 34)) || (item_type == 41)) { item_idol = true; }
-                    foreach (AffixList.SingleAffix affix in AffixList.instance.singleAffixes)
+                    if ((item_type > 24) && (item_type < 34)) { item_idol = true; }
+                    foreach (AffixList.SingleAffix affix in AffixList.get().singleAffixes)
                     {
                         bool affix_idol = false;
                         if (affix.affixName.Contains("Idol ")) { affix_idol = true; }
@@ -6819,14 +5981,10 @@ namespace LastEpoch_Hud.Scripts
                             (((filter_by_class) && (affix.classSpecificity == wanted_class)) || (!filter_by_class))
                             )
                         {
-                            bool naturally = false;
-                            if (affix.canRollOn.Contains(item_equipmenttype)) { naturally = true; }
-                            bool corrupted = false;
-                            if (affix.displayCategory == AffixList.AffixDisplayCategory.CORRUPTED) { corrupted = true; }
-                            AddShardInView(affix.affixId, affix.affixName, affix.type, affix_idol, naturally, corrupted);
+                            AddShardInView(affix.affixId, affix.affixName);
                         }
                     }
-                    foreach (AffixList.MultiAffix affix in AffixList.instance.multiAffixes)
+                    foreach (AffixList.MultiAffix affix in AffixList.get().multiAffixes)
                     {
                         bool affix_idol = false;
                         if (affix.affixName.Contains("Idol ")) { affix_idol = true; }
@@ -6837,11 +5995,7 @@ namespace LastEpoch_Hud.Scripts
                             (((filter_by_class) && (affix.classSpecificity == wanted_class)) || (!filter_by_class))
                             )
                         {
-                            bool naturally = false;
-                            if (affix.canRollOn.Contains(item_equipmenttype)) { naturally = true; }
-                            bool corrupted = false;
-                            if (affix.displayCategory == AffixList.AffixDisplayCategory.CORRUPTED) { corrupted = true; }
-                            AddShardInView(affix.affixId, affix.affixName, affix.type, affix_idol, naturally, corrupted);
+                            AddShardInView(affix.affixId, affix.affixName);
                         }
                     }
                     shard_initialized = true;
@@ -6851,46 +6005,22 @@ namespace LastEpoch_Hud.Scripts
                     foreach (GameObject go in Functions.GetAllChild(center_content))
                     {
                         Destroy(go);
-                    }                        
+                    }
+                        
                 }
-                public static void AddShardInView(int id, string name, AffixList.AffixType affix_type, bool idol, bool naturally, bool corrupted)
+                public static void AddShardInView(int id, string name)
                 {
                     GameObject g = Object.Instantiate(shard_prefab, Vector3.zero, Quaternion.identity);
                     g.transform.SetParent(center_content.transform);
                     GameObject shard_btn_object = Functions.GetChild(g, "shard_btn");
                     Button shard_btn = shard_btn_object.GetComponent<Button>();
                     shard_btn.name = shard_btn_name + id;
-                    UnityEngine.Color color_id = color_red;
-                    if (naturally) { color_id = color_green; }
-                    UnityEngine.Color color_name = color_blue;
-                    if (!idol)
-                    {
-                        if (corrupted) { color_name = color_green; }
-                        else if (affix_type == AffixList.AffixType.PREFIX) { color_name = color_yellow; }
-                        else if (affix_type == AffixList.AffixType.SPECIAL) { color_name = color_green; }
-                    }
                     GameObject shard_id_object = Functions.GetChild(shard_btn_object, "shard_id");
-                    if (!shard_id_object.IsNullOrDestroyed())
-                    {
-                        GameObject text = Functions.GetChild(shard_id_object, "Text");
-                        if (!text.IsNullOrDestroyed())
-                        {
-                            Text shard_id = text.GetComponent<Text>();
-                            shard_id.text = id.ToString();
-                            shard_id.color = color_id;
-                        }
-                    }
+                    Text shard_id = shard_id_object.GetComponent<Text>();
+                    shard_id.text = id.ToString();
                     GameObject shard_name_object = Functions.GetChild(shard_btn_object, "shard_name");
-                    if (!shard_name_object.IsNullOrDestroyed())
-                    {
-                        GameObject text = Functions.GetChild(shard_name_object, "Text");
-                        if (!text.IsNullOrDestroyed())
-                        {
-                            Text shard_name = text.GetComponent<Text>();
-                            shard_name.text = name.ToString();
-                            shard_name.color = color_name;
-                        }
-                    }
+                    Text shard_name = shard_name_object.GetComponent<Text>();
+                    shard_name.text = name.ToString();
                 }
                 public static void SelectShard(int id, string name)
                 {
@@ -6907,14 +6037,11 @@ namespace LastEpoch_Hud.Scripts
                 }
                 public static ItemAffix MakeAffix(int id, byte tier, byte roll, bool seal)
                 {
-                    //ItemAffix a = new ItemAffix();
-                    //a.IsSealedCorrupted
-
                     ItemAffix new_affix = null;
                     if (id > -1)
                     {
                         bool found = false;
-                        foreach (AffixList.SingleAffix affix in AffixList.instance.singleAffixes)
+                        foreach (AffixList.SingleAffix affix in AffixList.get().singleAffixes)
                         {
                             if (id == affix.affixId)
                             {
@@ -6926,7 +6053,7 @@ namespace LastEpoch_Hud.Scripts
                                     affixType = affix.type,
                                     //isSealedAffix = seal,
                                     affixTier = tier,
-                                    affixRoll = roll                                    
+                                    affixRoll = roll
                                 };
                                 found = true;
                                 break;
@@ -6934,7 +6061,7 @@ namespace LastEpoch_Hud.Scripts
                         }
                         if (!found)
                         {
-                            foreach (AffixList.MultiAffix affix in AffixList.instance.multiAffixes)
+                            foreach (AffixList.MultiAffix affix in AffixList.get().multiAffixes)
                             {
                                 if (id == affix.affixId)
                                 {
@@ -6966,7 +6093,6 @@ namespace LastEpoch_Hud.Scripts
                     unique_mods_enable = false;
                     legenday_potencial_enable = false;
                     weaver_will_enable = false;
-                    corrupted_enable = false;
                     quantity_enable = false;
                     btn_enable = false;
 
@@ -6981,7 +6107,6 @@ namespace LastEpoch_Hud.Scripts
                             if (item_legendary_type == UniqueList.LegendaryType.LegendaryPotential) { legenday_potencial_enable = true; }
                             weaver_will_enable = !legenday_potencial_enable;
                         }
-                        corrupted_enable = true;
                         quantity_enable = true;
                         btn_enable = true;
                     }
@@ -7036,69 +6161,27 @@ namespace LastEpoch_Hud.Scripts
                                 System.Collections.Generic.List<ItemAffix> new_affixes = new System.Collections.Generic.List<ItemAffix>();
                                 if (affix_0_id > -1)
                                 {
-                                    if (affix_0_random_toggle.isOn)
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_0_id, (byte)affix_0_tier_slider.value, (byte)Random.Range(0f, 255f), false));
-                                    }
-                                    else
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_0_id, (byte)affix_0_tier_slider.value, (byte)affix_0_value_slider.value, false));
-                                    }
+                                    new_affixes.Add(MakeAffix(affix_0_id, (byte)affix_0_tier_slider.value, (byte)affix_0_value_slider.value, false));
                                 }
                                 if (affix_1_id > -1)
                                 {
-                                    if (affix_1_random_toggle.isOn)
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_1_id, (byte)affix_1_tier_slider.value, (byte)Random.Range(0f, 255f), false));
-                                    }
-                                    else
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_1_id, (byte)affix_1_tier_slider.value, (byte)affix_1_value_slider.value, false));
-                                    }                                        
+                                    new_affixes.Add(MakeAffix(affix_1_id, (byte)affix_1_tier_slider.value, (byte)affix_1_value_slider.value, false));
                                 }
                                 if (affix_2_id > -1)
                                 {
-                                    if (affix_2_random_toggle.isOn)
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_2_id, (byte)affix_2_tier_slider.value, (byte)Random.Range(0f, 255f), false));
-                                    }
-                                    else
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_2_id, (byte)affix_2_tier_slider.value, (byte)affix_2_value_slider.value, false));
-                                    }                                        
+                                    new_affixes.Add(MakeAffix(affix_2_id, (byte)affix_2_tier_slider.value, (byte)affix_2_value_slider.value, false));
                                 }
                                 if (affix_3_id > -1)
                                 {
-                                    if (affix_3_random_toggle.isOn)
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_3_id, (byte)affix_3_tier_slider.value, (byte)Random.Range(0f, 255f), false));
-                                    }
-                                    else
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_3_id, (byte)affix_3_tier_slider.value, (byte)affix_3_value_slider.value, false));
-                                    }                                        
+                                    new_affixes.Add(MakeAffix(affix_3_id, (byte)affix_3_tier_slider.value, (byte)affix_3_value_slider.value, false));
                                 }
                                 if (affix_4_id > -1)
                                 {
-                                    if (affix_4_random_toggle.isOn)
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_4_id, (byte)affix_4_tier_slider.value, (byte)Random.Range(0f, 255f), false));
-                                    }
-                                    else
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_4_id, (byte)affix_4_tier_slider.value, (byte)affix_4_value_slider.value, false));
-                                    }                                        
+                                    new_affixes.Add(MakeAffix(affix_4_id, (byte)affix_4_tier_slider.value, (byte)affix_4_value_slider.value, false));
                                 }
                                 if (affix_5_id > -1)
                                 {
-                                    if (affix_5_random_toggle.isOn)
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_5_id, (byte)affix_5_tier_slider.value, (byte)Random.Range(0f, 255f), false));
-                                    }
-                                    else
-                                    {
-                                        new_affixes.Add(MakeAffix(affix_5_id, (byte)affix_5_tier_slider.value, (byte)affix_5_value_slider.value, false));
-                                    }                                        
+                                    new_affixes.Add(MakeAffix(affix_5_id, (byte)affix_5_tier_slider.value, (byte)affix_5_value_slider.value, false));
                                 }
                                 
                                 byte new_count = 0;
@@ -7151,8 +6234,7 @@ namespace LastEpoch_Hud.Scripts
                                 affixes = af,
                                 uniqueID = (ushort)item_unique_id,
                                 legendaryPotential = lp,
-                                weaversWill = ww,
-                                corrupted = toggle_corrupted.isOn
+                                weaversWill = ww
                             };
 
                             //Set Implicits
@@ -7173,52 +6255,23 @@ namespace LastEpoch_Hud.Scripts
                             //Set Unique mods
                             if (item.isUniqueSetOrLegendary())
                             {
-                                if (item_unique_id != 444)
+                                if (unique_mods_roll)
                                 {
-                                    if (unique_mods_dropdown.value == 1)
-                                    {
-                                        item.uniqueRolls[0] = (byte)unique_mod_0_slider.value;
-                                        item.uniqueRolls[1] = (byte)unique_mod_1_slider.value;
-                                        item.uniqueRolls[2] = (byte)unique_mod_2_slider.value;
-                                        item.uniqueRolls[3] = (byte)unique_mod_3_slider.value;
-                                        item.uniqueRolls[4] = (byte)unique_mod_4_slider.value;
-                                        item.uniqueRolls[5] = (byte)unique_mod_5_slider.value;
-                                        item.uniqueRolls[6] = (byte)unique_mod_6_slider.value;
-                                        item.uniqueRolls[7] = (byte)unique_mod_7_slider.value;
-                                    }
-                                    else
-                                    {
-                                        for (int k = 0; k < item.uniqueRolls.Count; k++)
-                                        {
-                                            item.uniqueRolls[k] = (byte)Random.RandomRange(0f, 255f);
-                                        }
-                                    }
+                                    item.uniqueRolls[0] = (byte)unique_mod_0_slider.value;
+                                    item.uniqueRolls[1] = (byte)unique_mod_1_slider.value;
+                                    item.uniqueRolls[2] = (byte)unique_mod_2_slider.value;
+                                    item.uniqueRolls[3] = (byte)unique_mod_3_slider.value;
+                                    item.uniqueRolls[4] = (byte)unique_mod_4_slider.value;
+                                    item.uniqueRolls[5] = (byte)unique_mod_5_slider.value;
+                                    item.uniqueRolls[6] = (byte)unique_mod_6_slider.value;
+                                    item.uniqueRolls[7] = (byte)unique_mod_7_slider.value;
                                 }
-                                else
+                                else //Random
                                 {
-                                    if (unique_mods_dropdown.value == 1) { item.uniqueRolls[0] = (byte)unique_mod_0_slider.value; }
-                                    else { item.uniqueRolls[0] = (byte)Random.RandomRange(0f, 255f); }
-                                    if (beast_evolution_0_dropdown.value == 0) { item.uniqueRolls[1] = (byte)Random.RandomRangeInt(1, evo_count); }
-                                    else { item.uniqueRolls[1] = (byte)beast_evolution_0_select_dropdown.value; }                                    
-                                    if (beast_evolution_1_dropdown.value == 0) { item.uniqueRolls[2] = (byte)Random.RandomRangeInt(1, evo_count); }
-                                    else { item.uniqueRolls[2] = (byte)beast_evolution_1_select_dropdown.value; }                                    
-                                    if (beast_evolution_2_dropdown.value == 0) { item.uniqueRolls[3] = (byte)Random.RandomRangeInt(1, evo_count); }
-                                    else { item.uniqueRolls[3] = (byte)beast_evolution_2_select_dropdown.value; }                                    
-                                    if (beast_evolution_3_dropdown.value == 0) { item.uniqueRolls[4] = (byte)Random.RandomRangeInt(1, evo_count); }
-                                    else { item.uniqueRolls[4] = (byte)beast_evolution_3_select_dropdown.value; }                                    
-                                    if (beast_evolution_4_dropdown.value == 0) { item.uniqueRolls[5] = (byte)Random.RandomRangeInt(1, evo_count); }
-                                    else { item.uniqueRolls[5] = (byte)beast_evolution_4_select_dropdown.value; }                                    
-                                    if (beast_evolution_5_dropdown.value == 0) { item.uniqueRolls[6] = (byte)Random.RandomRangeInt(1, evo_count); }
-                                    else { item.uniqueRolls[6] = (byte)beast_evolution_5_select_dropdown.value; }
-                                    if (beast_evolution_6_dropdown.value == 0) { item.uniqueRolls[7] = (byte)Random.RandomRangeInt(1, evo_count); }
-                                    else { item.uniqueRolls[7] = (byte)beast_evolution_6_select_dropdown.value; }
-
-                                    int unique_roll = item.uniqueRolls[0];
-                                    int m = 0;
-                                    if (unique_roll > 8) { m = unique_roll / 8; }
-                                    int nb_evo = unique_roll - (8 * m);
-                                    int nb_evolutions = (int)nb_evolution_slider.value;
-                                    if (nb_evo != nb_evolutions) { item.uniqueRolls[0] = (byte)((m * 8) + nb_evolutions); }
+                                    for (int k = 0; k < item.uniqueRolls.Count; k++)
+                                    {
+                                        item.uniqueRolls[k] = (byte)Random.RandomRange(0f, 255f);
+                                    }
                                 }
                             }
                             item.RefreshIDAndValues(); //Refresh item for implicits and unique mods
@@ -7228,695 +6281,14 @@ namespace LastEpoch_Hud.Scripts
                     }
                 }
             }
-            public class NewItems
+            public class Headhunter
             {
                 public static GameObject content_obj = null;
                 public static bool enable = false;
 
-                //Headhunter
-                public static Text Headhunter_MinGeneratedBuff_text = null;
-                public static Slider Headhunter_MinGeneratedBuff_slider = null;
-                public static readonly System.Action<float> Headhunter_MinGeneratedBuff_slider_Action = new System.Action<float>(Set_Headhunter_MinGeneratedBuff);
-                public static void Set_Headhunter_MinGeneratedBuff(float f)
-                {
-                    if ((!Headhunter_MinGeneratedBuff_slider.IsNullOrDestroyed()) && (!Headhunter_MinGeneratedBuff_text.IsNullOrDestroyed()))
-                    {
-                        float result = Headhunter_MinGeneratedBuff_slider.value;
-                        Save_Manager.instance.data.NewItems.Headhunter.MinGenerated = (int)result;
-                        if (Save_Manager.instance.data.NewItems.Headhunter.MinGenerated > Save_Manager.instance.data.NewItems.Headhunter.MaxGenerated)
-                        {
-                            Headhunter_MaxGeneratedBuff_slider.value = Save_Manager.instance.data.NewItems.Headhunter.MinGenerated;
-                        }                        
-                        Headhunter_MinGeneratedBuff_text.text = result.ToString();
-                    }
-                }
-                public static Text Headhunter_MaxGeneratedBuff_text = null;
-                public static Slider Headhunter_MaxGeneratedBuff_slider = null;
-                public static readonly System.Action<float> Headhunter_MaxGeneratedBuff_slider_Action = new System.Action<float>(Set_Headhunter_MaxGeneratedBuff);
-                public static void Set_Headhunter_MaxGeneratedBuff(float f)
-                {
-                    if ((!Headhunter_MaxGeneratedBuff_slider.IsNullOrDestroyed()) && (!Headhunter_MaxGeneratedBuff_text.IsNullOrDestroyed()))
-                    {
-                        float result = Headhunter_MaxGeneratedBuff_slider.value;
-                        Save_Manager.instance.data.NewItems.Headhunter.MaxGenerated = (int)result;
-                        if (Save_Manager.instance.data.NewItems.Headhunter.MaxGenerated < Save_Manager.instance.data.NewItems.Headhunter.MinGenerated)
-                        {
-                            Headhunter_MinGeneratedBuff_slider.value = Save_Manager.instance.data.NewItems.Headhunter.MaxGenerated;
-                        }
-                        Headhunter_MaxGeneratedBuff_text.text = result.ToString();                    
-                    }
-                }
-                public static Text Headhunter_BuffDuration_text = null;
-                public static Slider Headhunter_BuffDuration_slider = null;
-                public static readonly System.Action<float> Headhunter_BuffDuration_slider_Action = new System.Action<float>(Set_Headhunter_BuffDuration);
-                public static void Set_Headhunter_BuffDuration(float f)
-                {
-                    if ((!Headhunter_BuffDuration_slider.IsNullOrDestroyed()) && (!Headhunter_BuffDuration_text.IsNullOrDestroyed()))
-                    {
-                        float result = Headhunter_BuffDuration_slider.value;
-                        Save_Manager.instance.data.NewItems.Headhunter.BuffDuration = result;
-                        Headhunter_BuffDuration_text.text = result.ToString() + " sec";
-                    }
-                }
-                public static Text Headhunter_BuffStack_text = null;
-                public static Slider Headhunter_BuffStack_slider = null;
-                public static readonly System.Action<float> Headhunter_BuffStack_slider_Action = new System.Action<float>(Set_Headhunter_BuffStack);
-                public static void Set_Headhunter_BuffStack(float f)
-                {
-                    if ((!Headhunter_BuffStack_slider.IsNullOrDestroyed()) && (!Headhunter_BuffStack_text.IsNullOrDestroyed()))
-                    {
-                        float result = Headhunter_BuffStack_slider.value;
-                        Save_Manager.instance.data.NewItems.Headhunter.Stack = result;
-                        Headhunter_BuffStack_text.text = result.ToString();
-                    }
-                }
-                public static Text Headhunter_Add_text = null;
-                public static Slider Headhunter_Add_slider = null;
-                public static readonly System.Action<float> Headhunter_Add_slider_Action = new System.Action<float>(Set_Headhunter_Add);
-                public static void Set_Headhunter_Add(float f)
-                {
-                    if ((!Headhunter_Add_slider.IsNullOrDestroyed()) && (!Headhunter_Add_text.IsNullOrDestroyed()))
-                    {
-                        float result = Headhunter_Add_slider.value;
-                        Save_Manager.instance.data.NewItems.Headhunter.AddValue = result;
-                        Headhunter_Add_text.text = "+ " + result.ToString();
-                    }
-                }
-                public static Text Headhunter_Increase_text = null;
-                public static Slider Headhunter_Increase_slider = null;
-                public static readonly System.Action<float> Headhunter_Increase_slider_Action = new System.Action<float>(Set_Headhunter_Increase);
-                public static void Set_Headhunter_Increase(float f)
-                {
-                    if ((!Headhunter_Increase_slider.IsNullOrDestroyed()) && (!Headhunter_Increase_text.IsNullOrDestroyed()))
-                    {
-                        float result = Headhunter_Increase_slider.value;
-                        Save_Manager.instance.data.NewItems.Headhunter.IncreasedValue = result;
-                        Headhunter_Increase_text.text = "+ " + ((int)(result * 100)).ToString() + " %";
-                    }
-                }
-                public static Dropdown Headhunter_LegendaryType_dropdown = null;
-                private static void Set_Headhunter_LegendaryType()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Headhunter_LegendaryType_dropdown.IsNullOrDestroyed()))
-                    {
-                        bool weaverwill = false;
-                        if (Headhunter_LegendaryType_dropdown.value == 1) { weaverwill = true; }
-                        Save_Manager.instance.data.NewItems.Headhunter.WeaverWill = weaverwill;
-                        if (IsPauseOpen()) { Items_HeadHunter.Unique.Update_LegendaryType(); }
-                    }
-                }
-
-                //Mjolnir
-                public static Text Mjolnir_StrReq_text = null;
-                public static Slider Mjolnir_StrReq_slider = null;
-                public static readonly System.Action<float> Mjolnir_StrReq_slider_Action = new System.Action<float>(Set_Mjolnir_StrReq);
-                public static void Set_Mjolnir_StrReq(float f)
-                {
-                    if ((!Mjolnir_StrReq_slider.IsNullOrDestroyed()) && (!Mjolnir_StrReq_text.IsNullOrDestroyed()))
-                    {
-                        float result = Mjolnir_StrReq_slider.value;
-                        Save_Manager.instance.data.NewItems.Mjolner.StrRequirement = (int)result;
-                        Mjolnir_StrReq_text.text = result.ToString();
-                    }
-                }
-                public static Text Mjolnir_IntReq_text = null;
-                public static Slider Mjolnir_IntReq_slider = null;
-                public static readonly System.Action<float> Mjolnir_IntReq_slider_Action = new System.Action<float>(Set_Mjolnir_IntReq);
-                public static void Set_Mjolnir_IntReq(float f)
-                {
-                    if ((!Mjolnir_IntReq_slider.IsNullOrDestroyed()) && (!Mjolnir_IntReq_text.IsNullOrDestroyed()))
-                    {
-                        float result = Mjolnir_IntReq_slider.value;
-                        Save_Manager.instance.data.NewItems.Mjolner.IntRequirement = (int)result;
-                        Mjolnir_IntReq_text.text = result.ToString();
-                    }
-                }
-                public static Text Mjolnir_MinTriggerChance_text = null;
-                public static Slider Mjolnir_MinTriggerChance_slider = null;
-                public static readonly System.Action<float> Mjolnir_MinTriggerChance_slider_Action = new System.Action<float>(Set_Mjolnir_MinTriggerChance);
-                public static void Set_Mjolnir_MinTriggerChance(float f)
-                {
-                    if ((!Mjolnir_MinTriggerChance_slider.IsNullOrDestroyed()) && (!Mjolnir_MinTriggerChance_text.IsNullOrDestroyed()))
-                    {
-                        if (Mjolnir_MinTriggerChance_slider.value > Mjolnir_MaxTriggerChance_slider.value)
-                        {
-                            Mjolnir_MaxTriggerChance_slider.value = Mjolnir_MinTriggerChance_slider.value;
-                        }
-                        float result = Mjolnir_MinTriggerChance_slider.value;
-                        Save_Manager.instance.data.NewItems.Mjolner.MinTriggerChance = (result / 100);
-                        Mjolnir_MinTriggerChance_text.text = result.ToString() + " %";
-                    }
-                }
-                public static Text Mjolnir_MaxTriggerChance_text = null;
-                public static Slider Mjolnir_MaxTriggerChance_slider = null;
-                public static readonly System.Action<float> Mjolnir_MaxTriggerChance_slider_Action = new System.Action<float>(Set_Mjolnir_MaxTriggerChance);
-                public static void Set_Mjolnir_MaxTriggerChance(float f)
-                {
-                    if ((!Mjolnir_MaxTriggerChance_slider.IsNullOrDestroyed()) && (!Mjolnir_MaxTriggerChance_text.IsNullOrDestroyed()))
-                    {
-                        if (Mjolnir_MaxTriggerChance_slider.value < Mjolnir_MinTriggerChance_slider.value)
-                        {
-                            Mjolnir_MinTriggerChance_slider.value = Mjolnir_MaxTriggerChance_slider.value;
-                        }
-                        float result = Mjolnir_MaxTriggerChance_slider.value;
-                        Save_Manager.instance.data.NewItems.Mjolner.MaxTriggerChance = (result / 100);
-                        Mjolnir_MaxTriggerChance_text.text = result.ToString() + " %";
-                    }
-                }
-                public static Text Mjolnir_TriggerCooldown_text = null;
-                public static Slider Mjolnir_TriggerCooldown_slider = null;
-                public static readonly System.Action<float> Mjolnir_TriggerCooldown_slider_Action = new System.Action<float>(Set_Mjolnir_TriggerCooldown);
-                public static void Set_Mjolnir_TriggerCooldown(float f)
-                {
-                    if ((!Mjolnir_TriggerCooldown_slider.IsNullOrDestroyed()) && (!Mjolnir_TriggerCooldown_text.IsNullOrDestroyed()))
-                    {
-                        float result = Mjolnir_TriggerCooldown_slider.value;
-                        Save_Manager.instance.data.NewItems.Mjolner.SocketedCooldown = result;
-                        Mjolnir_TriggerCooldown_text.text = result.ToString() + " sec";
-                    }
-                }
-                public static Dropdown Mjolnir_Socket0_dropdown = null;
-                private static void Set_Mjolnir_Socket0()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Mjolnir_Socket0_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_0 = Mjolnir_Socket0_dropdown.options[Mjolnir_Socket0_dropdown.value].text;
-                        if (IsPauseOpen()) { Items_Mjolner.Trigger.Initialize_SocketedSkills(); }
-                    }
-                }
-                public static Dropdown Mjolnir_Socket1_dropdown = null;
-                private static void Set_Mjolnir_Socket1()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Mjolnir_Socket1_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_1 = Mjolnir_Socket1_dropdown.options[Mjolnir_Socket1_dropdown.value].text;
-                        if (IsPauseOpen()) { Items_Mjolner.Trigger.Initialize_SocketedSkills(); }
-                    }
-                }
-                public static Dropdown Mjolnir_Socket2_dropdown = null;
-                private static void Set_Mjolnir_Socket2()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Mjolnir_Socket2_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_2 = Mjolnir_Socket2_dropdown.options[Mjolnir_Socket2_dropdown.value].text;
-                        if (IsPauseOpen()) { Items_Mjolner.Trigger.Initialize_SocketedSkills(); }
-                    }
-                }
-                public static Dropdown Mjolnir_LegendaryType_dropdown = null;
-                private static void Set_Mjolnir_LegendaryType()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Mjolnir_LegendaryType_dropdown.IsNullOrDestroyed()))
-                    {
-                        bool weaverwill = false;
-                        if (Mjolnir_LegendaryType_dropdown.value == 1) { weaverwill = true; }
-                        Save_Manager.instance.data.NewItems.Mjolner.WeaverWill = weaverwill;
-                        if (IsPauseOpen()) { Items_Mjolner.Unique.Update_LegendaryType(weaverwill); }
-                    }
-                }
-
-                //Herald of Ice
-                public static Dropdown Herald_of_Ice_VFX_dropdown = null;
-                private static void Set_Herald_of_Ice_VFX()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Ice_VFX_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfIce.VFX = Herald_of_Ice_VFX_dropdown.options[Herald_of_Ice_VFX_dropdown.value].text;
-                        Object.Destroy(Items_Heralds.Uniques.Ice.ability);
-                        Object.Destroy(Items_Heralds.Uniques.Ice.prefab_obj);
-                    }
-                }
-                public static Toggle Herald_of_Ice_Radius_toggle = null;
-                public static readonly System.Action<bool> Herald_of_Ice_Radius_Toggle_Action = new System.Action<bool>(Set_Herald_of_Ice_Radius_Enable);
-                private static void Set_Herald_of_Ice_Radius_Enable(bool enable)
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Ice_Radius_toggle.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfIce.Enable_Radius = Herald_of_Ice_Radius_toggle.isOn;
-                        Object.Destroy(Items_Heralds.Uniques.Ice.prefab_obj);
-                    }
-                }
-                public static Text Herald_of_Ice_Radius_text = null;
-                public static Slider Herald_of_Ice_Radius_slider = null;
-                public static readonly System.Action<float> Herald_of_Ice_Radius_slider_Action = new System.Action<float>(Set_Herald_of_Ice_Radius);
-                public static void Set_Herald_of_Ice_Radius(float f)
-                {
-                    if ((!Herald_of_Ice_Radius_slider.IsNullOrDestroyed()) && (!Herald_of_Ice_Radius_text.IsNullOrDestroyed()))
-                    {
-                        float result = Herald_of_Ice_Radius_slider.value;
-                        Save_Manager.instance.data.NewItems.HeraldOfIce.Radius = result;              
-                        Herald_of_Ice_Radius_text.text = ((int)(result * 100)).ToString() + " %";
-                        Object.Destroy(Items_Heralds.Uniques.Ice.prefab_obj);
-                    }
-                }
-                public static Dropdown Herald_of_Ice_LegendaryType_dropdown = null;
-                private static void Set_Herald_of_Ice_LegendaryType()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Ice_LegendaryType_dropdown.IsNullOrDestroyed()))
-                    {
-                        bool weaverwill = false;
-                        if (Herald_of_Ice_LegendaryType_dropdown.value == 1) { weaverwill = true; }
-                        Save_Manager.instance.data.NewItems.HeraldOfIce.WeaverWill = weaverwill;
-                        if (IsPauseOpen()) { Items_Heralds.Uniques.Ice.Update_LegendaryType(weaverwill); }
-                    }
-                }
-
-                //Herald of Ash
-                public static Dropdown Herald_of_Fire_VFX_dropdown = null;
-                private static void Set_Herald_of_Fire_VFX()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Fire_VFX_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfFire.VFX = Herald_of_Fire_VFX_dropdown.options[Herald_of_Fire_VFX_dropdown.value].text;
-                        Object.Destroy(Items_Heralds.Uniques.Fire.ability);
-                        Object.Destroy(Items_Heralds.Uniques.Fire.prefab_obj);
-                    }
-                }
-                public static Toggle Herald_of_Fire_Radius_toggle = null;
-                public static readonly System.Action<bool> Herald_of_Fire_Radius_Toggle_Action = new System.Action<bool>(Set_Herald_of_Fire_Radius_Enable);
-                private static void Set_Herald_of_Fire_Radius_Enable(bool enable)
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Fire_Radius_toggle.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfFire.Enable_Radius = Herald_of_Fire_Radius_toggle.isOn;
-                        Object.Destroy(Items_Heralds.Uniques.Fire.prefab_obj);
-                    }
-                }
-                public static Text Herald_of_Fire_Radius_text = null;
-                public static Slider Herald_of_Fire_Radius_slider = null;
-                public static readonly System.Action<float> Herald_of_Fire_Radius_slider_Action = new System.Action<float>(Set_Herald_of_Fire_Radius);
-                public static void Set_Herald_of_Fire_Radius(float f)
-                {
-                    if ((!Herald_of_Fire_Radius_slider.IsNullOrDestroyed()) && (!Herald_of_Fire_Radius_text.IsNullOrDestroyed()))
-                    {
-                        float result = Herald_of_Fire_Radius_slider.value;
-                        Save_Manager.instance.data.NewItems.HeraldOfFire.Radius = result;
-                        Herald_of_Fire_Radius_text.text = ((int)(result * 100)).ToString() + " %";
-                        Object.Destroy(Items_Heralds.Uniques.Fire.prefab_obj);
-                    }
-                }
-                public static Dropdown Herald_of_Fire_LegendaryType_dropdown = null;
-                private static void Set_Herald_of_Fire_LegendaryType()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Fire_LegendaryType_dropdown.IsNullOrDestroyed()))
-                    {
-                        bool weaverwill = false;
-                        if (Herald_of_Fire_LegendaryType_dropdown.value == 1) { weaverwill = true; }
-                        Save_Manager.instance.data.NewItems.HeraldOfFire.WeaverWill = weaverwill;
-                        if (IsPauseOpen()) { Items_Heralds.Uniques.Fire.Update_LegendaryType(weaverwill); }
-                    }
-                }
-
-                //Herald of Thunder
-                public static Dropdown Herald_of_Thunder_VFX_dropdown = null;
-                private static void Set_Herald_of_Thunder_VFX()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Thunder_VFX_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfThunder.VFX = Herald_of_Thunder_VFX_dropdown.options[Herald_of_Thunder_VFX_dropdown.value].text;
-                        Object.Destroy(Items_Heralds.Uniques.Lightning.ability);
-                        Object.Destroy(Items_Heralds.Uniques.Lightning.prefab_obj);
-                    }
-                }
-                public static Toggle Herald_of_Thunder_Radius_toggle = null;
-                public static readonly System.Action<bool> Herald_of_Thunder_Radius_Toggle_Action = new System.Action<bool>(Set_Herald_of_Thunder_Radius_Enable);
-                private static void Set_Herald_of_Thunder_Radius_Enable(bool enable)
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Thunder_Radius_toggle.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfThunder.Enable_Radius = Herald_of_Thunder_Radius_toggle.isOn;
-                        Object.Destroy(Items_Heralds.Uniques.Lightning.prefab_obj);
-                    }
-                }
-                public static Text Herald_of_Thunder_Radius_text = null;
-                public static Slider Herald_of_Thunder_Radius_slider = null;
-                public static readonly System.Action<float> Herald_of_Thunder_Radius_slider_Action = new System.Action<float>(Set_Herald_of_Thunder_Radius);
-                public static void Set_Herald_of_Thunder_Radius(float f)
-                {
-                    if ((!Herald_of_Thunder_Radius_slider.IsNullOrDestroyed()) && (!Herald_of_Thunder_Radius_text.IsNullOrDestroyed()))
-                    {
-                        float result = Herald_of_Thunder_Radius_slider.value;
-                        Save_Manager.instance.data.NewItems.HeraldOfThunder.Radius = result;
-                        Herald_of_Thunder_Radius_text.text = ((int)(result * 100)).ToString() + " %";
-                        Object.Destroy(Items_Heralds.Uniques.Lightning.prefab_obj);
-                    }
-                }
-                public static Dropdown Herald_of_Thunder_LegendaryType_dropdown = null;
-                private static void Set_Herald_of_Thunder_LegendaryType()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Thunder_LegendaryType_dropdown.IsNullOrDestroyed()))
-                    {
-                        bool weaverwill = false;
-                        if (Herald_of_Thunder_LegendaryType_dropdown.value == 1) { weaverwill = true; }
-                        Save_Manager.instance.data.NewItems.HeraldOfThunder.WeaverWill = weaverwill;
-                        if (IsPauseOpen()) { Items_Heralds.Uniques.Lightning.Update_LegendaryType(weaverwill); }
-                    }
-                }
-
-                //Herald of Agony
-                public static Dropdown Herald_of_Agony_VFX_dropdown = null;
-                private static void Set_Herald_of_Agony_VFX()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Agony_VFX_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfAgony.VFX = Herald_of_Agony_VFX_dropdown.options[Herald_of_Agony_VFX_dropdown.value].text;
-                        Object.Destroy(Items_Heralds.Uniques.Poison.ability);
-                        Object.Destroy(Items_Heralds.Uniques.Poison.prefab_obj);
-                    }
-                }
-                public static Toggle Herald_of_Agony_Radius_toggle = null;
-                public static readonly System.Action<bool> Herald_of_Agony_Radius_Toggle_Action = new System.Action<bool>(Set_Herald_of_Agony_Radius_Enable);
-                private static void Set_Herald_of_Agony_Radius_Enable(bool enable)
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Agony_Radius_toggle.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfAgony.Enable_Radius = Herald_of_Agony_Radius_toggle.isOn;
-                        Object.Destroy(Items_Heralds.Uniques.Poison.prefab_obj);
-                    }
-                }
-                public static Text Herald_of_Agony_Radius_text = null;
-                public static Slider Herald_of_Agony_Radius_slider = null;
-                public static readonly System.Action<float> Herald_of_Agony_Radius_slider_Action = new System.Action<float>(Set_Herald_of_Agony_Radius);
-                public static void Set_Herald_of_Agony_Radius(float f)
-                {
-                    if ((!Herald_of_Agony_Radius_slider.IsNullOrDestroyed()) && (!Herald_of_Agony_Radius_text.IsNullOrDestroyed()))
-                    {
-                        float result = Herald_of_Agony_Radius_slider.value;
-                        Save_Manager.instance.data.NewItems.HeraldOfAgony.Radius = result;
-                        Herald_of_Agony_Radius_text.text = ((int)(result * 100)).ToString() + " %";
-                        Object.Destroy(Items_Heralds.Uniques.Poison.prefab_obj);
-                    }
-                }
-                public static Dropdown Herald_of_Agony_LegendaryType_dropdown = null;
-                private static void Set_Herald_of_Agony_LegendaryType()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Agony_LegendaryType_dropdown.IsNullOrDestroyed()))
-                    {
-                        bool weaverwill = false;
-                        if (Herald_of_Agony_LegendaryType_dropdown.value == 1) { weaverwill = true; }
-                        Save_Manager.instance.data.NewItems.HeraldOfAgony.WeaverWill = weaverwill;
-                        if (IsPauseOpen()) { Items_Heralds.Uniques.Poison.Update_LegendaryType(weaverwill); }
-                    }
-                }
-
-                //Herald of Purity
-                public static Dropdown Herald_of_Purity_VFX_dropdown = null;
-                private static void Set_Herald_of_Purity_VFX()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Purity_VFX_dropdown.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfPurity.VFX = Herald_of_Purity_VFX_dropdown.options[Herald_of_Purity_VFX_dropdown.value].text;
-                        Object.Destroy(Items_Heralds.Uniques.Physical.ability);
-                        Object.Destroy(Items_Heralds.Uniques.Physical.prefab_obj);
-                    }
-                }
-                public static Toggle Herald_of_Purity_Radius_toggle = null;
-                public static readonly System.Action<bool> Herald_of_Purity_Radius_Toggle_Action = new System.Action<bool>(Set_Herald_of_Purity_Radius_Enable);
-                private static void Set_Herald_of_Purity_Radius_Enable(bool enable)
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Purity_Radius_toggle.IsNullOrDestroyed()))
-                    {
-                        Save_Manager.instance.data.NewItems.HeraldOfPurity.Enable_Radius = Herald_of_Purity_Radius_toggle.isOn;
-                        Object.Destroy(Items_Heralds.Uniques.Physical.prefab_obj);
-                    }
-                }
-                public static Text Herald_of_Purity_Radius_text = null;
-                public static Slider Herald_of_Purity_Radius_slider = null;
-                public static readonly System.Action<float> Herald_of_Purity_Radius_slider_Action = new System.Action<float>(Set_Herald_of_Purity_Radius);
-                public static void Set_Herald_of_Purity_Radius(float f)
-                {
-                    if ((!Herald_of_Purity_Radius_slider.IsNullOrDestroyed()) && (!Herald_of_Purity_Radius_text.IsNullOrDestroyed()))
-                    {
-                        float result = Herald_of_Purity_Radius_slider.value;
-                        Save_Manager.instance.data.NewItems.HeraldOfPurity.Radius = result;
-                        Herald_of_Purity_Radius_text.text = ((int)(result * 100)).ToString() + " %";
-                        Object.Destroy(Items_Heralds.Uniques.Physical.prefab_obj);
-                    }
-                }
-                public static Dropdown Herald_of_Purity_LegendaryType_dropdown = null;
-                private static void Set_Herald_of_Purity_LegendaryType()
-                {
-                    if ((!Save_Manager.instance.IsNullOrDestroyed()) && (!Herald_of_Purity_LegendaryType_dropdown.IsNullOrDestroyed()))
-                    {
-                        bool weaverwill = false;
-                        if (Herald_of_Purity_LegendaryType_dropdown.value == 1) { weaverwill = true; }
-                        Save_Manager.instance.data.NewItems.HeraldOfPurity.WeaverWill = weaverwill;
-                        if (IsPauseOpen()) { Items_Heralds.Uniques.Physical.Update_LegendaryType(weaverwill); }
-                    }
-                }
-
                 public static void Get_Refs()
                 {
-                    content_obj = Functions.GetChild(Content.content_obj, "NewItems_Content");
-                    if (!content_obj.IsNullOrDestroyed())
-                    {
-                        GameObject left = Functions.GetViewportContent(content_obj, "Left", "Content");
-                        if (!left.IsNullOrDestroyed())
-                        {
-                            GameObject headhunter = Functions.GetChild(left, "Headhunter");
-                            if (!headhunter.IsNullOrDestroyed())
-                            {
-                                Headhunter_MinGeneratedBuff_text = Functions.Get_TextInToggle(left, "Headhunter", "MinBuffText", "Value");
-                                Headhunter_MinGeneratedBuff_slider = Functions.Get_SliderInPanel(left, "Headhunter", "Slider_MinBuff");
-                                Headhunter_MaxGeneratedBuff_text = Functions.Get_TextInToggle(left, "Headhunter", "MaxBuffText", "Value");
-                                Headhunter_MaxGeneratedBuff_slider = Functions.Get_SliderInPanel(left, "Headhunter", "Slider_MaxBuff");
-                                Headhunter_BuffDuration_text = Functions.Get_TextInToggle(left, "Headhunter", "BuffDurationText", "Value");
-                                Headhunter_BuffDuration_slider = Functions.Get_SliderInPanel(left, "Headhunter", "Slider_BuffDuration");
-                                Headhunter_BuffStack_text = Functions.Get_TextInToggle(left, "Headhunter", "BuffStack", "Value");
-                                Headhunter_BuffStack_slider = Functions.Get_SliderInPanel(left, "Headhunter", "Slider_BuffStack");
-                                Headhunter_Add_text = Functions.Get_TextInToggle(left, "Headhunter", "AddText", "Value");
-                                Headhunter_Add_slider = Functions.Get_SliderInPanel(left, "Headhunter", "Slider_Add");
-                                Headhunter_Increase_text = Functions.Get_TextInToggle(left, "Headhunter", "IncreaseText", "Value");
-                                Headhunter_Increase_slider = Functions.Get_SliderInPanel(left, "Headhunter", "Slider_Increase");
-                                Headhunter_LegendaryType_dropdown = Functions.Get_DopboxInPanel(headhunter, "Dropdown_LegendaryType", "Dropdown", new System.Action<int>((_) => { Set_Headhunter_LegendaryType(); }));
-                            }
-                            GameObject mjolnir = Functions.GetChild(left, "Mjolnir");
-                            if (!mjolnir.IsNullOrDestroyed())
-                            {
-                                Mjolnir_StrReq_text = Functions.Get_TextInToggle(left, "Mjolnir", "StrReqText", "Value");
-                                Mjolnir_StrReq_slider = Functions.Get_SliderInPanel(left, "Mjolnir", "Slider_StrReq");
-                                Mjolnir_IntReq_text = Functions.Get_TextInToggle(left, "Mjolnir", "IntReqText", "Value");
-                                Mjolnir_IntReq_slider = Functions.Get_SliderInPanel(left, "Mjolnir", "Slider_IntReq");
-                                Mjolnir_MinTriggerChance_text = Functions.Get_TextInToggle(left, "Mjolnir", "MinTriggerChanceText", "Value");
-                                Mjolnir_MinTriggerChance_slider = Functions.Get_SliderInPanel(left, "Mjolnir", "Slider_MinTriggerChance");
-                                Mjolnir_MaxTriggerChance_text = Functions.Get_TextInToggle(left, "Mjolnir", "MaxTriggerChanceText", "Value");
-                                Mjolnir_MaxTriggerChance_slider = Functions.Get_SliderInPanel(left, "Mjolnir", "Slider_MaxTriggerChance");
-                                Mjolnir_TriggerCooldown_text = Functions.Get_TextInToggle(left, "Mjolnir", "SockectedCooldownText", "Value");
-                                Mjolnir_TriggerCooldown_slider = Functions.Get_SliderInPanel(left, "Mjolnir", "Slider_SockectedCooldown(1)");
-                                Mjolnir_Socket0_dropdown = Functions.Get_DopboxInPanel(mjolnir, "Dropdown_Socket1", "Dropdown", new System.Action<int>((_) => { Set_Mjolnir_Socket0(); }));
-                                Mjolnir_Socket1_dropdown = Functions.Get_DopboxInPanel(mjolnir, "Dropdown_Socket2", "Dropdown", new System.Action<int>((_) => { Set_Mjolnir_Socket1(); }));
-                                Mjolnir_Socket2_dropdown = Functions.Get_DopboxInPanel(mjolnir, "Dropdown_Socket3", "Dropdown", new System.Action<int>((_) => { Set_Mjolnir_Socket2(); }));
-                                Mjolnir_LegendaryType_dropdown = Functions.Get_DopboxInPanel(mjolnir, "Dropdown_LegendaryType", "Dropdown", new System.Action<int>((_) => { Set_Mjolnir_LegendaryType(); }));
-                            }
-                            GameObject herald_of_ice = Functions.GetChild(left, "Herald_of_Ice");
-                            if (!herald_of_ice.IsNullOrDestroyed())
-                            {
-                                Herald_of_Ice_VFX_dropdown = Functions.Get_DopboxInPanel(herald_of_ice, "VFX", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Ice_VFX(); }));
-                                Herald_of_Ice_Radius_toggle = Functions.Get_ToggleInPanel(left, "Herald_of_Ice", "Toggle");
-                                Herald_of_Ice_Radius_text = Functions.Get_TextInToggle(left, "Herald_of_Ice", "Toggle", "Value");
-                                Herald_of_Ice_Radius_slider = Functions.Get_SliderInPanel(left, "Herald_of_Ice", "Slider");
-                                Herald_of_Ice_LegendaryType_dropdown = Functions.Get_DopboxInPanel(herald_of_ice, "Dropdown_LegendaryType", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Ice_LegendaryType(); }));
-                            }
-                            GameObject herald_of_fire = Functions.GetChild(left, "Herald_of_Fire");
-                            if (!herald_of_fire.IsNullOrDestroyed())
-                            {
-                                Herald_of_Fire_VFX_dropdown = Functions.Get_DopboxInPanel(herald_of_fire, "VFX", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Fire_VFX(); }));
-                                Herald_of_Fire_Radius_toggle = Functions.Get_ToggleInPanel(left, "Herald_of_Fire", "Toggle");
-                                Herald_of_Fire_Radius_text = Functions.Get_TextInToggle(left, "Herald_of_Fire", "Toggle", "Value");
-                                Herald_of_Fire_Radius_slider = Functions.Get_SliderInPanel(left, "Herald_of_Fire", "Slider");
-                                Herald_of_Fire_LegendaryType_dropdown = Functions.Get_DopboxInPanel(herald_of_fire, "Dropdown_LegendaryType", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Fire_LegendaryType(); }));
-                            }
-                            GameObject herald_of_thunder = Functions.GetChild(left, "Herald_of_Thunder");
-                            if (!herald_of_thunder.IsNullOrDestroyed())
-                            {
-                                Herald_of_Thunder_VFX_dropdown = Functions.Get_DopboxInPanel(herald_of_thunder, "VFX", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Thunder_VFX(); }));
-                                Herald_of_Thunder_Radius_toggle = Functions.Get_ToggleInPanel(left, "Herald_of_Thunder", "Toggle");
-                                Herald_of_Thunder_Radius_text = Functions.Get_TextInToggle(left, "Herald_of_Thunder", "Toggle", "Value");
-                                Herald_of_Thunder_Radius_slider = Functions.Get_SliderInPanel(left, "Herald_of_Thunder", "Slider");
-                                Herald_of_Thunder_LegendaryType_dropdown = Functions.Get_DopboxInPanel(herald_of_thunder, "Dropdown_LegendaryType", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Thunder_LegendaryType(); }));
-                            }
-                            GameObject herald_of_agony = Functions.GetChild(left, "Herald_of_Agony");
-                            if (!herald_of_agony.IsNullOrDestroyed())
-                            {
-                                Herald_of_Agony_VFX_dropdown = Functions.Get_DopboxInPanel(herald_of_agony, "VFX", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Agony_VFX(); }));
-                                Herald_of_Agony_Radius_toggle = Functions.Get_ToggleInPanel(left, "Herald_of_Agony", "Toggle");
-                                Herald_of_Agony_Radius_text = Functions.Get_TextInToggle(left, "Herald_of_Agony", "Toggle", "Value");
-                                Herald_of_Agony_Radius_slider = Functions.Get_SliderInPanel(left, "Herald_of_Agony", "Slider");
-                                Herald_of_Agony_LegendaryType_dropdown = Functions.Get_DopboxInPanel(herald_of_agony, "Dropdown_LegendaryType", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Agony_LegendaryType(); }));
-                            }
-                            GameObject herald_of_purity = Functions.GetChild(left, "Herald_of_Purity");
-                            if (!herald_of_agony.IsNullOrDestroyed())
-                            {
-                                Herald_of_Purity_VFX_dropdown = Functions.Get_DopboxInPanel(herald_of_purity, "VFX", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Purity_VFX(); }));
-                                Herald_of_Purity_Radius_toggle = Functions.Get_ToggleInPanel(left, "Herald_of_Purity", "Toggle");
-                                Herald_of_Purity_Radius_text = Functions.Get_TextInToggle(left, "Herald_of_Purity", "Toggle", "Value");
-                                Herald_of_Purity_Radius_slider = Functions.Get_SliderInPanel(left, "Herald_of_Purity", "Slider");
-                                Herald_of_Purity_LegendaryType_dropdown = Functions.Get_DopboxInPanel(herald_of_purity, "Dropdown_LegendaryType", "Dropdown", new System.Action<int>((_) => { Set_Herald_of_Purity_LegendaryType(); }));
-                            }
-                        }
-                        GameObject center = Functions.GetViewportContent(content_obj, "Center", "Content");
-                        if (!center.IsNullOrDestroyed())
-                        {
-
-                        }
-                        GameObject right = Functions.GetViewportContent(content_obj, "R", "Content");
-                        if (!right.IsNullOrDestroyed())
-                        {
-
-                        }
-                    }
-                }
-                public static void Init_Dropdowns()
-                {
-                    GetLegendaryType(Headhunter_LegendaryType_dropdown);
-
-                    GetAbility(Mjolnir_Socket0_dropdown, "", true, false);
-                    GetAbility(Mjolnir_Socket1_dropdown, "", true, false);
-                    GetAbility(Mjolnir_Socket2_dropdown, "", true, false);
-                    GetLegendaryType(Mjolnir_LegendaryType_dropdown);
-
-                    GetAbility(Herald_of_Ice_VFX_dropdown, "Cold, Spell", false, true);
-                    GetLegendaryType(Herald_of_Ice_LegendaryType_dropdown);
-
-                    GetAbility(Herald_of_Fire_VFX_dropdown, "Fire, Spell", false, true);
-                    GetLegendaryType(Herald_of_Fire_LegendaryType_dropdown);
-
-                    GetAbility(Herald_of_Thunder_VFX_dropdown, "Lightning, Spell", false, true);
-                    GetLegendaryType(Herald_of_Thunder_LegendaryType_dropdown);
-
-                    GetAbility(Herald_of_Agony_VFX_dropdown, "Poison, Spell", false, true);
-                    GetLegendaryType(Herald_of_Agony_LegendaryType_dropdown);
-
-                    GetAbility(Herald_of_Purity_VFX_dropdown, "Physical, Spell", false, true);
-                    GetLegendaryType(Herald_of_Agony_LegendaryType_dropdown);
-                }
-                public static void GetLegendaryType(Dropdown dropdown)
-                {
-                    if (!dropdown.IsNullOrDestroyed())
-                    {
-                        dropdown.options.Clear();
-                        dropdown.options.Add(new Dropdown.OptionData(UniqueList.LegendaryType.LegendaryPotential.ToString()));
-                        dropdown.options.Add(new Dropdown.OptionData(UniqueList.LegendaryType.WeaversWill.ToString()));
-                    }
-                }
-                public static void GetAbility(Dropdown dropdown, string tags, bool mjolnir, bool herald)
-                {
-                    if (!dropdown.IsNullOrDestroyed())
-                    {
-                        dropdown.options.Clear();
-                        System.Collections.Generic.List<string> names = new System.Collections.Generic.List<string>(); //Don't duplicate abilities
-                        foreach (Ability ab in Resources.FindObjectsOfTypeAll<Ability>())
-                        {
-                            if ((mjolnir) && (ab.tags.HasFlag(AT.Lightning)) && (ab.tags.HasFlag(AT.Spell)))
-                            {
-                                if (!names.Contains(ab.abilityName)) { names.Add(ab.abilityName); }
-                            }
-                            else if ((herald) && (ab.tags.ToString() == tags))
-                            {
-                                if (!ab.abilityPrefab.IsNullOrDestroyed())
-                                {
-                                    bool contain_collider = false;
-                                    SphereCollider collider = ab.abilityPrefab.GetComponent<UnityEngine.SphereCollider>();
-                                    if (!collider.IsNullOrDestroyed()) { contain_collider = true; }
-                                    bool contain_vfx_ondeath = false;
-                                    CreateVfxOnDeath vfx_on_death = ab.abilityPrefab.GetComponent<CreateVfxOnDeath>();
-                                    if (!vfx_on_death.IsNullOrDestroyed()) { contain_vfx_ondeath = true; }
-                                    if ((contain_collider) && (contain_vfx_ondeath))
-                                    {
-                                        if (!names.Contains(ab.name)) { names.Add(ab.name); }
-                                    }
-                                }
-                            }
-                        }
-                        names.Sort();
-                        foreach (string name in names) { dropdown.options.Add(new Dropdown.OptionData(name)); }
-                    }
-                }
-                public static void Set_Events()
-                {
-                    if (!Headhunter_MinGeneratedBuff_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Headhunter_MinGeneratedBuff_slider, Headhunter_MinGeneratedBuff_slider_Action);
-                    }
-                    if (!Headhunter_MaxGeneratedBuff_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Headhunter_MaxGeneratedBuff_slider, Headhunter_MaxGeneratedBuff_slider_Action);
-                    }
-                    if (!Headhunter_BuffDuration_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Headhunter_BuffDuration_slider, Headhunter_BuffDuration_slider_Action);
-                    }
-                    if (!Headhunter_BuffStack_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Headhunter_BuffStack_slider, Headhunter_BuffStack_slider_Action);
-                    }
-                    if (!Headhunter_Add_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Headhunter_Add_slider, Headhunter_Add_slider_Action);
-                    }
-                    if (!Headhunter_Increase_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Headhunter_Increase_slider, Headhunter_Increase_slider_Action);
-                    }
-                    if (!Mjolnir_StrReq_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Mjolnir_StrReq_slider, Mjolnir_StrReq_slider_Action);
-                    }
-                    if (!Mjolnir_IntReq_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Mjolnir_IntReq_slider, Mjolnir_IntReq_slider_Action);
-                    }
-                    if (!Mjolnir_MinTriggerChance_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Mjolnir_MinTriggerChance_slider, Mjolnir_MinTriggerChance_slider_Action);
-                    }
-                    if (!Mjolnir_MaxTriggerChance_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Mjolnir_MaxTriggerChance_slider, Mjolnir_MaxTriggerChance_slider_Action);
-                    }
-                    if (!Mjolnir_TriggerCooldown_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Mjolnir_TriggerCooldown_slider, Mjolnir_TriggerCooldown_slider_Action);
-                    }
-                    if (!Herald_of_Ice_Radius_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(Herald_of_Ice_Radius_toggle, Herald_of_Ice_Radius_Toggle_Action);
-                    }
-                    if (!Herald_of_Ice_Radius_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Herald_of_Ice_Radius_slider, Herald_of_Ice_Radius_slider_Action);
-                    }
-                    if (!Herald_of_Fire_Radius_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(Herald_of_Fire_Radius_toggle, Herald_of_Fire_Radius_Toggle_Action);
-                    }
-                    if (!Herald_of_Fire_Radius_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Herald_of_Fire_Radius_slider, Herald_of_Fire_Radius_slider_Action);
-                    }
-                    if (!Herald_of_Thunder_Radius_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(Herald_of_Thunder_Radius_toggle, Herald_of_Thunder_Radius_Toggle_Action);
-                    }
-                    if (!Herald_of_Thunder_Radius_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Herald_of_Thunder_Radius_slider, Herald_of_Thunder_Radius_slider_Action);
-                    }
-                    if (!Herald_of_Agony_Radius_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(Herald_of_Agony_Radius_toggle, Herald_of_Agony_Radius_Toggle_Action);
-                    }
-                    if (!Herald_of_Agony_Radius_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Herald_of_Agony_Radius_slider, Herald_of_Agony_Radius_slider_Action);
-                    }
-                    if (!Herald_of_Purity_Radius_toggle.IsNullOrDestroyed())
-                    {
-                        Events.Set_Toggle_Event(Herald_of_Purity_Radius_toggle, Herald_of_Purity_Radius_Toggle_Action);
-                    }
-                    if (!Herald_of_Purity_Radius_slider.IsNullOrDestroyed())
-                    {
-                        Events.Set_Slider_Event(Herald_of_Purity_Radius_slider, Herald_of_Purity_Radius_slider_Action);
-                    }
+                    content_obj = Functions.GetChild(Content.content_obj, "Headhunter_Content");
                 }
                 public static void Set_Active(bool show)
                 {
@@ -7938,1429 +6310,20 @@ namespace LastEpoch_Hud.Scripts
                 public static bool Init_Data()
                 {
                     bool result = false;
-                    if (!Save_Manager.instance.IsNullOrDestroyed())
-                    {
-                        if (Save_Manager.instance.initialized)
-                        {
-                            if (!Headhunter_MinGeneratedBuff_slider.IsNullOrDestroyed())
-                            {
-                                Headhunter_MinGeneratedBuff_slider.value = Save_Manager.instance.data.NewItems.Headhunter.MinGenerated;
-                            }
-                            if (!Headhunter_MaxGeneratedBuff_slider.IsNullOrDestroyed())
-                            {
-                                Headhunter_MaxGeneratedBuff_slider.value = Save_Manager.instance.data.NewItems.Headhunter.MaxGenerated;
-                            }
-                            if (!Headhunter_BuffDuration_slider.IsNullOrDestroyed())
-                            {
-                                Headhunter_BuffDuration_slider.value = Save_Manager.instance.data.NewItems.Headhunter.BuffDuration;
-                            }
-                            if (!Headhunter_BuffStack_slider.IsNullOrDestroyed())
-                            {
-                                Headhunter_BuffStack_slider.value = Save_Manager.instance.data.NewItems.Headhunter.Stack;
-                            }
-                            if (!Headhunter_Add_slider.IsNullOrDestroyed())
-                            {
-                                Headhunter_Add_slider.value = Save_Manager.instance.data.NewItems.Headhunter.AddValue;
-                            }
-                            if (!Headhunter_Increase_slider.IsNullOrDestroyed())
-                            {
-                                Headhunter_Increase_slider.value = Save_Manager.instance.data.NewItems.Headhunter.IncreasedValue;
-                            }
-                            if (!Headhunter_LegendaryType_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.Headhunter.WeaverWill) { index = 1; }
-                                Headhunter_LegendaryType_dropdown.value = index;
-                            }
 
-                            if (!Mjolnir_StrReq_slider.IsNullOrDestroyed())
-                            {
-                                Mjolnir_StrReq_slider.value = Save_Manager.instance.data.NewItems.Mjolner.StrRequirement;
-                            }
-                            if (!Mjolnir_IntReq_slider.IsNullOrDestroyed())
-                            {
-                                Mjolnir_IntReq_slider.value = Save_Manager.instance.data.NewItems.Mjolner.IntRequirement;
-                            }
-                            if (!Mjolnir_MinTriggerChance_slider.IsNullOrDestroyed())
-                            {
-                                Mjolnir_MinTriggerChance_slider.value = (Save_Manager.instance.data.NewItems.Mjolner.MinTriggerChance * 100);
-                            }
-                            if (!Mjolnir_MaxTriggerChance_slider.IsNullOrDestroyed())
-                            {
-                                Mjolnir_MaxTriggerChance_slider.value = (Save_Manager.instance.data.NewItems.Mjolner.MaxTriggerChance * 100);
-                            }
-                            if (!Mjolnir_TriggerCooldown_slider.IsNullOrDestroyed())
-                            {
-                                Mjolnir_TriggerCooldown_slider.value = (float)Save_Manager.instance.data.NewItems.Mjolner.SocketedCooldown;
-                            }
-                            if (!Mjolnir_Socket0_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_0 != "")
-                                {
-                                    bool found = false;
-                                    foreach (Dropdown.OptionData options in Mjolnir_Socket0_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_0) { break; }
-                                        found = true;
-                                        index++;
-                                    }
-                                    if (!found) { index = 0; }
-                                }
-                                Mjolnir_Socket0_dropdown.value = index;
-                            }
-                            if (!Mjolnir_Socket1_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_1 != "")
-                                {
-                                    bool found = false;
-                                    foreach (Dropdown.OptionData options in Mjolnir_Socket1_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_1) { break; }
-                                        found = true;
-                                        index++;
-                                    }
-                                    if (!found) { index = 0; }
-                                }
-                                Mjolnir_Socket1_dropdown.value = index;
-                            }
-                            if (!Mjolnir_Socket2_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_2 != "")
-                                {
-                                    bool found = false;
-                                    foreach (Dropdown.OptionData options in Mjolnir_Socket2_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.Mjolner.SockectedSkill_2) { break; }
-                                        found = true;
-                                        index++;
-                                    }
-                                    if (!found) { index = 0; }
-                                }
-                                Mjolnir_Socket2_dropdown.value = index;
-                            }
-                            if (!Mjolnir_LegendaryType_dropdown.IsNullOrDestroyed())
-                            {
-                                if (Save_Manager.instance.data.NewItems.Mjolner.WeaverWill) { Mjolnir_LegendaryType_dropdown.value = 1; }
-                                else { Mjolnir_LegendaryType_dropdown.value = 0; }
-                            }
 
-                            if (!Herald_of_Ice_VFX_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.HeraldOfIce.VFX != "")
-                                {
-                                    foreach (Dropdown.OptionData options in Herald_of_Ice_VFX_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.HeraldOfIce.VFX) { break; }
-                                        index++;
-                                    }
-                                }
-                                Herald_of_Ice_VFX_dropdown.value = index;
-                            }
-                            if (!Herald_of_Ice_Radius_toggle.IsNullOrDestroyed())
-                            {
-                                Herald_of_Ice_Radius_toggle.isOn = Save_Manager.instance.data.NewItems.HeraldOfIce.Enable_Radius;
-                            }
-                            if (!Herald_of_Ice_Radius_slider.IsNullOrDestroyed())
-                            {
-                                Herald_of_Ice_Radius_slider.value = Save_Manager.instance.data.NewItems.HeraldOfIce.Radius;
-                            }
-                            if (!Herald_of_Ice_LegendaryType_dropdown.IsNullOrDestroyed())
-                            {
-                                if (Save_Manager.instance.data.NewItems.HeraldOfIce.WeaverWill) { Herald_of_Ice_LegendaryType_dropdown.value = 1; }
-                                else { Herald_of_Ice_LegendaryType_dropdown.value = 0; }
-                            }
 
-                            if (!Herald_of_Fire_VFX_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.HeraldOfFire.VFX != "")
-                                {
-                                    foreach (Dropdown.OptionData options in Herald_of_Fire_VFX_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.HeraldOfFire.VFX) { break; }
-                                        index++;
-                                    }
-                                }
-                                Herald_of_Fire_VFX_dropdown.value = index;
-                            }
-                            if (!Herald_of_Fire_Radius_toggle.IsNullOrDestroyed())
-                            {
-                                Herald_of_Fire_Radius_toggle.isOn = Save_Manager.instance.data.NewItems.HeraldOfFire.Enable_Radius;
-                            }
-                            if (!Herald_of_Fire_Radius_slider.IsNullOrDestroyed())
-                            {
-                                Herald_of_Fire_Radius_slider.value = Save_Manager.instance.data.NewItems.HeraldOfFire.Radius;
-                            }
-                            if (!Herald_of_Fire_LegendaryType_dropdown.IsNullOrDestroyed())
-                            {
-                                if (Save_Manager.instance.data.NewItems.HeraldOfFire.WeaverWill) { Herald_of_Fire_LegendaryType_dropdown.value = 1; }
-                                else { Herald_of_Fire_LegendaryType_dropdown.value = 0; }
-                            }
-
-                            if (!Herald_of_Thunder_VFX_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.HeraldOfThunder.VFX != "")
-                                {
-                                    foreach (Dropdown.OptionData options in Herald_of_Thunder_VFX_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.HeraldOfThunder.VFX) { break; }
-                                        index++;
-                                    }
-                                }
-                                Herald_of_Thunder_VFX_dropdown.value = index;
-                            }
-                            if (!Herald_of_Thunder_Radius_toggle.IsNullOrDestroyed())
-                            {
-                                Herald_of_Thunder_Radius_toggle.isOn = Save_Manager.instance.data.NewItems.HeraldOfThunder.Enable_Radius;
-                            }
-                            if (!Herald_of_Thunder_Radius_slider.IsNullOrDestroyed())
-                            {
-                                Herald_of_Thunder_Radius_slider.value = Save_Manager.instance.data.NewItems.HeraldOfThunder.Radius;
-                            }
-                            if (!Herald_of_Thunder_LegendaryType_dropdown.IsNullOrDestroyed())
-                            {
-                                if (Save_Manager.instance.data.NewItems.HeraldOfThunder.WeaverWill) { Herald_of_Thunder_LegendaryType_dropdown.value = 1; }
-                                else { Herald_of_Thunder_LegendaryType_dropdown.value = 0; }
-                            }
-
-                            if (!Herald_of_Agony_VFX_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.HeraldOfAgony.VFX != "")
-                                {
-                                    foreach (Dropdown.OptionData options in Herald_of_Agony_VFX_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.HeraldOfAgony.VFX) { break; }
-                                        index++;
-                                    }
-                                }
-                                Herald_of_Agony_VFX_dropdown.value = index;
-                            }
-                            if (!Herald_of_Agony_Radius_toggle.IsNullOrDestroyed())
-                            {
-                                Herald_of_Agony_Radius_toggle.isOn = Save_Manager.instance.data.NewItems.HeraldOfAgony.Enable_Radius;
-                            }
-                            if (!Herald_of_Agony_Radius_slider.IsNullOrDestroyed())
-                            {
-                                Herald_of_Agony_Radius_slider.value = Save_Manager.instance.data.NewItems.HeraldOfAgony.Radius;
-                            }
-                            if (!Herald_of_Agony_LegendaryType_dropdown.IsNullOrDestroyed())
-                            {
-                                if (Save_Manager.instance.data.NewItems.HeraldOfAgony.WeaverWill) { Herald_of_Agony_LegendaryType_dropdown.value = 1; }
-                                else { Herald_of_Agony_LegendaryType_dropdown.value = 0; }
-                            }
-
-                            if (!Herald_of_Purity_VFX_dropdown.IsNullOrDestroyed())
-                            {
-                                int index = 0;
-                                if (Save_Manager.instance.data.NewItems.HeraldOfPurity.VFX != "")
-                                {
-                                    foreach (Dropdown.OptionData options in Herald_of_Purity_VFX_dropdown.options)
-                                    {
-                                        if (options.text == Save_Manager.instance.data.NewItems.HeraldOfPurity.VFX) { break; }
-                                        index++;
-                                    }
-                                }
-                                Herald_of_Purity_VFX_dropdown.value = index;
-                            }
-                            if (!Herald_of_Purity_Radius_toggle.IsNullOrDestroyed())
-                            {
-                                Herald_of_Purity_Radius_toggle.isOn = Save_Manager.instance.data.NewItems.HeraldOfPurity.Enable_Radius;
-                            }
-                            if (!Herald_of_Purity_Radius_slider.IsNullOrDestroyed())
-                            {
-                                Herald_of_Purity_Radius_slider.value = Save_Manager.instance.data.NewItems.HeraldOfPurity.Radius;
-                            }
-                            if (!Herald_of_Purity_LegendaryType_dropdown.IsNullOrDestroyed())
-                            {
-                                if (Save_Manager.instance.data.NewItems.HeraldOfPurity.WeaverWill) { Herald_of_Purity_LegendaryType_dropdown.value = 1; }
-                                else { Herald_of_Purity_LegendaryType_dropdown.value = 0; }
-                            }
-
-                            result = true;
-                        }
-                    }
-                    
                     return result;
                 }
-            }
-            public class Maxroll
-            {
-                public static GameObject content_obj = null;
-                public static bool enable = false;
-                public static bool show = false;
-                public static bool loading = false;
-                public static bool update = false;
+                public static void UpdateVisuals()
+                {
+                    if (!Save_Manager.instance.IsNullOrDestroyed())
+                    {
+                        if ((Save_Manager.instance.initialized) && (!Save_Manager.instance.data.IsNullOrDestroyed()))
+                        {
 
-                public static GameObject profile_text_obj = null;
-                public static GameObject profile_dropdown_obj = null;
-                public static Dropdown profile_dropdown = null;
-                public static void Update_Profile()
-                {
-                    if (!loading)
-                    {
-                        Maxroll_import.Data.selected_profile = profile_dropdown.value;
-                        update = true;
-                        show = false;
-                    }
-                }
-                public static TMP_InputField url_field = null;
-                public static Button clear_url_btn = null;
-                public static readonly System.Action clear_url_OnClick_Action = new System.Action(clear_url_Click);
-                public static void clear_url_Click()
-                {
-                    if (!url_field.IsNullOrDestroyed()) { url_field.text = ""; }
-                    //Hide();
-                    Maxroll_import.Data.root = null;
-                    Maxroll_import.Data.data = null;                    
-                }
-                public static Button refresh_btn = null;
-                public static readonly System.Action refresh_OnClick_Action = new System.Action(refresh_Click);
-                public static async void refresh_Click()
-                {
-                    if (!url_field.IsNullOrDestroyed()) { await Maxroll_import.Data.Load(url_field.text); }
-                }
-                public static GameObject _3_obj = null;
-                public static Text build_name_text = null;
-                public static Text autor_name_text = null;
-                public static GameObject youtube_obj = null;
-                public static Button youtube_btn = null;
-                public static readonly System.Action youtube_OnClick_Action = new System.Action(youtube_Click);
-                public static void youtube_Click()
-                {
-                    if (youtube_url != "") { Application.OpenURL(youtube_url); }
-                }
-                public static string youtube_url = "";
-                public static GameObject twitch_obj = null;
-                public static Button twitch_btn = null;
-                public static readonly System.Action twitch_OnClick_Action = new System.Action(twitch_Click);
-                public static void twitch_Click()
-                {
-                    if (twitch_url != "") { Application.OpenURL(twitch_url); }
-                }
-                public static string twitch_url = "";
-                public static GameObject l_content_obj = null;
-                public static GameObject r_content_obj = null;
-                public static Text classe_text = null;
-                public static Button classe_btn = null;
-                public static readonly System.Action classe_OnClick_Action = new System.Action(classe_Click);
-                public static void classe_Click()
-                {
-                    if ((!Refs_Manager.character_class_list.IsNullOrDestroyed()) && (!classe_text.IsNullOrDestroyed()) && (!Refs_Manager.player_data.IsNullOrDestroyed()))
-                    {
-                        bool found = false;
-                        int i = 0;
-                        foreach (CharacterClass char_class in Refs_Manager.character_class_list.classes)
-                        {
-                            if (char_class.className == classe_text.text) { found = true; break; }
-                            i++;
-                        }
-                        if (found)
-                        {
-                            Refs_Manager.player_data.CharacterClass = i;
-                            Refs_Manager.player_data.SaveData();
-                            update = true;
-                            show = false;
-                        }                        
-                    }
-                }
-                public static Text level_text = null;
-                public static Button level_btn = null;
-                public static readonly System.Action level_OnClick_Action = new System.Action(level_Click);
-                public static void level_Click()
-                {
-                    try
-                    {
-                        int level = System.Convert.ToInt32(level_text.text);
-                        Mods.Character.Character_Level.LevelUpToLevel(level);
-                    }
-                    catch { }
-                }
-                public static Text items_text = null;
-                public static Button items_btn = null;
-                public static readonly System.Action items_OnClick_Action = new System.Action(items_Click);
-                public static void items_Click()
-                {
-                    Maxroll_import.Data.Load_Equipments();
-                }
-                public static Text idols_text = null;
-                public static Button idols_btn = null;
-                public static readonly System.Action idols_OnClick_Action = new System.Action(idols_Click);
-                public static void idols_Click()
-                {
-                    Maxroll_import.Data.Load_Idols();
-                }
-                public static Text blessings_text = null;
-                public static Button blessings_btn = null;
-                public static readonly System.Action blessings_OnClick_Action = new System.Action(blessings_Click);
-                public static void blessings_Click()
-                {
-                    Maxroll_import.Data.Load_Blessings();
-                }
-                public static Text passives_text = null;
-                public static Button passives_btn = null;
-                public static readonly System.Action passives_OnClick_Action = new System.Action(passives_Click);
-                public static void passives_Click()
-                {
-                    Maxroll_import.Data.Load_Passives();
-                }
-                public static Text weavertree_text = null;
-                public static Button weavertree_btn = null;
-                public static readonly System.Action weavertree_OnClick_Action = new System.Action(weavertree_Click);
-                public static void weavertree_Click()
-                {
-                    Maxroll_import.Data.Load_WeaverTree();
-                }
-                public static Image mainskill_image = null;
-                public static Text mainskill_text = null;
-                public static Image activeskill_0_image = null;
-                public static Image activeskill_1_image = null;
-                public static Image activeskill_2_image = null;
-                public static Image activeskill_3_image = null;
-                public static Image activeskill_4_image = null;
-                public static Button activeskills_btn = null;
-                public static readonly System.Action activeskills_OnClick_Action = new System.Action(activeskills_Click);
-                public static void activeskills_Click()
-                {
-                    Maxroll_import.Data.Load_ActiveSkills();
-                }
-                public static Button skilltrees_btn = null;
-                public static readonly System.Action skilltrees_OnClick_Action = new System.Action(skilltrees_Click);
-                public static void skilltrees_Click()
-                {
-                    Maxroll_import.Data.Load_SkillTrees();
-                }
-                public static Text skill_0_text = null;
-                public static Image skill_0_image = null;
-                public static Dropdown skill_0_dropdown = null;
-                public static Button skill_0_btn = null;
-                public static readonly System.Action skill_0_OnClick_Action = new System.Action(skill_0_Click);
-                public static void skill_0_Click()
-                {
-                    Maxroll_import.Data.Load_SkillTree(0, skill_0_dropdown.value);
-                }
-                public static Text skill_1_text = null;
-                public static Image skill_1_image = null;
-                public static Dropdown skill_1_dropdown = null;
-                public static Button skill_1_btn = null;
-                public static readonly System.Action skill_1_OnClick_Action = new System.Action(skill_1_Click);
-                public static void skill_1_Click()
-                {
-                    Maxroll_import.Data.Load_SkillTree(1, skill_1_dropdown.value);
-                }
-                public static Text skill_2_text = null;
-                public static Image skill_2_image = null;
-                public static Dropdown skill_2_dropdown = null;
-                public static Button skill_2_btn = null;
-                public static readonly System.Action skill_2_OnClick_Action = new System.Action(skill_2_Click);
-                public static void skill_2_Click()
-                {
-                    Maxroll_import.Data.Load_SkillTree(2, skill_2_dropdown.value);
-                }
-                public static Text skill_3_text = null;
-                public static Image skill_3_image = null;
-                public static Dropdown skill_3_dropdown = null;
-                public static Button skill_3_btn = null;
-                public static readonly System.Action skill_3_OnClick_Action = new System.Action(skill_3_Click);
-                public static void skill_3_Click()
-                {
-                    Maxroll_import.Data.Load_SkillTree(3, skill_3_dropdown.value);
-                }
-                public static Text skill_4_text = null;
-                public static Image skill_4_image = null;
-                public static Dropdown skill_4_dropdown = null;
-                public static Button skill_4_btn = null;
-                public static readonly System.Action skill_4_OnClick_Action = new System.Action(skill_4_Click);
-                public static void skill_4_Click()
-                {
-                    Maxroll_import.Data.Load_SkillTree(4, skill_4_dropdown.value);
-                }
-                
-                public static void Get_Refs()
-                {
-                    content_obj = Functions.GetChild(Content.content_obj, "Maxroll_Content");
-                    if (!content_obj.IsNullOrDestroyed())
-                    {
-                        GameObject top_obj = Functions.GetChild(content_obj, "Top");
-                        if (!top_obj.IsNullOrDestroyed())
-                        {
-                            GameObject top_content_obj = Functions.GetChild(top_obj, "Content");
-                            if (!top_content_obj.IsNullOrDestroyed())
-                            {
-                                GameObject _0_obj = Functions.GetChild(top_content_obj, "0");
-                                if (!_0_obj.IsNullOrDestroyed())
-                                {
-                                    GameObject profile_obj = Functions.GetChild(_0_obj, "Profile");
-                                    if (!profile_obj.IsNullOrDestroyed())
-                                    {
-                                        profile_text_obj = Functions.GetChild(profile_obj, "Text");
-                                        if (!profile_text_obj.IsNullOrDestroyed())
-                                        {
-
-                                        }
-                                    }
-                                }
-                                GameObject _1_obj = Functions.GetChild(top_content_obj, "1");
-                                if (!_1_obj.IsNullOrDestroyed())
-                                {
-                                    GameObject url_obj = Functions.GetChild(_1_obj, "Url");
-                                    if (!url_obj.IsNullOrDestroyed())
-                                    {
-                                        GameObject inputfield_obj = Functions.GetChild(url_obj, "InputField");
-                                        if (!inputfield_obj.IsNullOrDestroyed())
-                                        {
-                                            url_field = inputfield_obj.GetComponent<TMP_InputField>();
-                                        }
-                                        GameObject btn_obj = Functions.GetChild(url_obj, "Button");
-                                        if (!btn_obj.IsNullOrDestroyed())
-                                        {
-                                            clear_url_btn = btn_obj.GetComponent<Button>();
-                                        }
-                                    }
-                                    GameObject profile_obj = Functions.GetChild(_1_obj, "Profile");
-                                    if (!profile_obj.IsNullOrDestroyed())
-                                    {                                        
-                                        profile_dropdown_obj = Functions.GetChild(profile_obj, "Dropdown");
-                                        if (!profile_dropdown_obj.IsNullOrDestroyed())
-                                        {
-                                            profile_dropdown = profile_dropdown_obj.GetComponent<Dropdown>();
-                                            profile_dropdown.onValueChanged = new Dropdown.DropdownEvent();
-                                            profile_dropdown.onValueChanged.AddListener(new System.Action<int>((_) => { Update_Profile(); }));
-                                        }
-                                    }
-                                }
-                                GameObject _2_obj = Functions.GetChild(top_content_obj, "2");
-                                if (!_2_obj.IsNullOrDestroyed())
-                                {
-                                    GameObject refresh_obj = Functions.GetChild(_2_obj, "Refresh");
-                                    if (!refresh_obj.IsNullOrDestroyed())
-                                    {
-                                        GameObject btn_obj = Functions.GetChild(refresh_obj, "Button");
-                                        if (!btn_obj.IsNullOrDestroyed())
-                                        {
-                                            refresh_btn = btn_obj.GetComponent<Button>();
-                                        }
-                                    }
-                                }
-                                _3_obj = Functions.GetChild(top_content_obj, "3");
-                                if (!_3_obj.IsNullOrDestroyed())
-                                {
-                                    GameObject buildname_obj = Functions.GetChild(_3_obj, "BuildName");
-                                    if (!buildname_obj.IsNullOrDestroyed())
-                                    {
-                                        GameObject buildname_text_obj = Functions.GetChild(buildname_obj, "Text");
-                                        if (!buildname_text_obj.IsNullOrDestroyed())
-                                        {
-                                            build_name_text = buildname_text_obj.GetComponent<Text>();
-                                        }
-                                    }
-                                    GameObject copyright_obj = Functions.GetChild(_3_obj, "Copyright");
-                                    if (!copyright_obj.IsNullOrDestroyed())
-                                    {
-                                        GameObject madeby_obj = Functions.GetChild(copyright_obj, "MadeBy");
-                                        if (!madeby_obj.IsNullOrDestroyed())
-                                        {
-                                            GameObject username_obj = Functions.GetChild(madeby_obj, "Username");
-                                            if (!username_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject autorname_text_obj = Functions.GetChild(username_obj, "Text");
-                                                if (!autorname_text_obj.IsNullOrDestroyed())
-                                                {
-                                                    autor_name_text = autorname_text_obj.GetComponent<Text>();
-                                                }
-                                            }
-                                            GameObject social_obj = Functions.GetChild(madeby_obj, "Social");
-                                            if (!social_obj.IsNullOrDestroyed())
-                                            {
-                                                youtube_obj = Functions.GetChild(social_obj, "Youtube");
-                                                if (!youtube_obj.IsNullOrDestroyed())
-                                                {
-                                                    youtube_btn = youtube_obj.GetComponent<Button>();
-                                                }
-                                                twitch_obj = Functions.GetChild(social_obj, "Twitch");
-                                                if (!twitch_obj.IsNullOrDestroyed())
-                                                {
-                                                    twitch_btn = twitch_obj.GetComponent<Button>();
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        GameObject center_obj = Functions.GetChild(content_obj, "Center");
-                        if (!center_obj.IsNullOrDestroyed())
-                        {
-                            GameObject l_obj = Functions.GetChild(center_obj, "L");
-                            if (!l_obj.IsNullOrDestroyed())
-                            {
-                                GameObject c_obj = Functions.GetChild(l_obj, "Content");
-                                if (!c_obj.IsNullOrDestroyed())
-                                {
-                                    GameObject v_obj = Functions.GetChild(c_obj, "Viewport");
-                                    if (!v_obj.IsNullOrDestroyed())
-                                    {
-                                        l_content_obj = Functions.GetChild(v_obj, "Content");
-                                        if (!l_content_obj.IsNullOrDestroyed())
-                                        {
-                                            GameObject classe_obj = Functions.GetChild(l_content_obj, "Classe");
-                                            if (!classe_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject value_obj = Functions.GetChild(classe_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        classe_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(classe_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        classe_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject level_obj = Functions.GetChild(l_content_obj, "Level");
-                                            if (!level_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject value_obj = Functions.GetChild(level_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        level_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(level_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        level_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject items_obj = Functions.GetChild(l_content_obj, "Items");
-                                            if (!items_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject value_obj = Functions.GetChild(items_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        items_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(items_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        items_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject idols_obj = Functions.GetChild(l_content_obj, "Idols");
-                                            if (!idols_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject value_obj = Functions.GetChild(idols_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        idols_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(idols_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        idols_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject blessings_obj = Functions.GetChild(l_content_obj, "Blessings");
-                                            if (!blessings_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject value_obj = Functions.GetChild(blessings_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        blessings_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(blessings_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        blessings_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject passives_obj = Functions.GetChild(l_content_obj, "Passives");
-                                            if (!passives_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject value_obj = Functions.GetChild(passives_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        passives_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(passives_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        passives_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject weavertree_obj = Functions.GetChild(l_content_obj, "WeaverTree");
-                                            if (!weavertree_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject value_obj = Functions.GetChild(weavertree_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        weavertree_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(weavertree_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        weavertree_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            GameObject r_obj = Functions.GetChild(center_obj, "R");
-                            if (!r_obj.IsNullOrDestroyed())
-                            {
-                                GameObject c_obj = Functions.GetChild(r_obj, "Content");
-                                if (!c_obj.IsNullOrDestroyed())
-                                {
-                                    GameObject v_obj = Functions.GetChild(c_obj, "Viewport");
-                                    if (!v_obj.IsNullOrDestroyed())
-                                    {
-                                        r_content_obj = Functions.GetChild(v_obj, "Content");
-                                        if (!r_content_obj.IsNullOrDestroyed())
-                                        {
-                                            GameObject mainskill_obj = Functions.GetChild(r_content_obj, "MainSkill");
-                                            if (!mainskill_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject icon_obj = Functions.GetChild(mainskill_obj, "Icon");
-                                                if (!icon_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject image_obj = Functions.GetChild(icon_obj, "Value");
-                                                    if (!image_obj.IsNullOrDestroyed())
-                                                    {
-                                                        mainskill_image = image_obj.GetComponent<Image>();
-                                                    }
-                                                }
-                                                GameObject value_obj = Functions.GetChild(mainskill_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        mainskill_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject activeskills_obj = Functions.GetChild(r_content_obj, "ActiveSkills");
-                                            if (!activeskills_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject icons_obj = Functions.GetChild(activeskills_obj, "Icons");
-                                                if (!icons_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject values_obj = Functions.GetChild(icons_obj, "Values");
-                                                    if (!values_obj.IsNullOrDestroyed())
-                                                    {
-                                                        GameObject _0_obj = Functions.GetChild(values_obj, "0");
-                                                        if (!_0_obj.IsNullOrDestroyed())
-                                                        {
-                                                            activeskill_0_image = _0_obj.GetComponent<Image>();
-                                                        }
-                                                        GameObject _1_obj = Functions.GetChild(values_obj, "1");
-                                                        if (!_1_obj.IsNullOrDestroyed())
-                                                        {
-                                                            activeskill_1_image = _1_obj.GetComponent<Image>();
-                                                        }
-                                                        GameObject _2_obj = Functions.GetChild(values_obj, "2");
-                                                        if (!_2_obj.IsNullOrDestroyed())
-                                                        {
-                                                            activeskill_2_image = _2_obj.GetComponent<Image>();
-                                                        }
-                                                        GameObject _3_obj = Functions.GetChild(values_obj, "3");
-                                                        if (!_3_obj.IsNullOrDestroyed())
-                                                        {
-                                                            activeskill_3_image = _3_obj.GetComponent<Image>();
-                                                        }
-                                                        GameObject _4_obj = Functions.GetChild(values_obj, "4");
-                                                        if (!_4_obj.IsNullOrDestroyed())
-                                                        {
-                                                            activeskill_4_image = _4_obj.GetComponent<Image>();
-                                                        }
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(activeskills_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        activeskills_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject skilltrees_obj = Functions.GetChild(r_content_obj, "SkillTrees");
-                                            if (!skilltrees_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject btn_obj = Functions.GetChild(skilltrees_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skilltrees_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                    else { Main.logger_instance.Error("skilltrees_btn Not found"); }
-                                                }
-                                            }
-                                            GameObject skill_0_obj = Functions.GetChild(r_content_obj, "Skill_0");
-                                            if (!skill_0_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject icon_obj = Functions.GetChild(skill_0_obj, "Icon");
-                                                if (!icon_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject image_obj = Functions.GetChild(icon_obj, "Value");
-                                                    if (!image_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_0_image = image_obj.GetComponent<Image>();
-                                                    }
-                                                }
-                                                GameObject value_obj = Functions.GetChild(skill_0_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_0_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject index_obj = Functions.GetChild(skill_0_obj, "IndexValue");
-                                                if (!index_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject dropdown_obj = Functions.GetChild(index_obj, "Dropdown");
-                                                    if (!dropdown_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_0_dropdown = dropdown_obj.GetComponent<Dropdown>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(skill_0_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_0_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                    else { Main.logger_instance.Error("skill_0_btn Not found"); }
-                                                }
-                                            }
-                                            GameObject skill_1_obj = Functions.GetChild(r_content_obj, "Skill_1");
-                                            if (!skill_1_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject icon_obj = Functions.GetChild(skill_1_obj, "Icon");
-                                                if (!icon_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject image_obj = Functions.GetChild(icon_obj, "Value");
-                                                    if (!image_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_1_image = image_obj.GetComponent<Image>();
-                                                    }
-                                                }
-                                                GameObject value_obj = Functions.GetChild(skill_1_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_1_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject index_obj = Functions.GetChild(skill_1_obj, "IndexValue");
-                                                if (!index_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject dropdown_obj = Functions.GetChild(index_obj, "Dropdown");
-                                                    if (!dropdown_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_1_dropdown = dropdown_obj.GetComponent<Dropdown>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(skill_1_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_1_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject skill_2_obj = Functions.GetChild(r_content_obj, "Skill_2");
-                                            if (!skill_2_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject icon_obj = Functions.GetChild(skill_2_obj, "Icon");
-                                                if (!icon_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject image_obj = Functions.GetChild(icon_obj, "Value");
-                                                    if (!image_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_2_image = image_obj.GetComponent<Image>();
-                                                    }
-                                                }
-                                                GameObject value_obj = Functions.GetChild(skill_2_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_2_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject index_obj = Functions.GetChild(skill_2_obj, "IndexValue");
-                                                if (!index_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject dropdown_obj = Functions.GetChild(index_obj, "Dropdown");
-                                                    if (!dropdown_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_2_dropdown = dropdown_obj.GetComponent<Dropdown>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(skill_2_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_2_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject skill_3_obj = Functions.GetChild(r_content_obj, "Skill_3");
-                                            if (!skill_3_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject icon_obj = Functions.GetChild(skill_3_obj, "Icon");
-                                                if (!icon_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject image_obj = Functions.GetChild(icon_obj, "Value");
-                                                    if (!image_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_3_image = image_obj.GetComponent<Image>();
-                                                    }
-                                                }
-                                                GameObject value_obj = Functions.GetChild(skill_3_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_3_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject index_obj = Functions.GetChild(skill_3_obj, "IndexValue");
-                                                if (!index_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject dropdown_obj = Functions.GetChild(index_obj, "Dropdown");
-                                                    if (!dropdown_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_3_dropdown = dropdown_obj.GetComponent<Dropdown>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(skill_3_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_3_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                            GameObject skill_4_obj = Functions.GetChild(r_content_obj, "Skill_4");
-                                            if (!skill_4_obj.IsNullOrDestroyed())
-                                            {
-                                                GameObject icon_obj = Functions.GetChild(skill_4_obj, "Icon");
-                                                if (!icon_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject image_obj = Functions.GetChild(icon_obj, "Value");
-                                                    if (!image_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_4_image = image_obj.GetComponent<Image>();
-                                                    }
-                                                }
-                                                GameObject value_obj = Functions.GetChild(skill_4_obj, "Value");
-                                                if (!value_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject text_obj = Functions.GetChild(value_obj, "Text");
-                                                    if (!text_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_4_text = text_obj.GetComponent<Text>();
-                                                    }
-                                                }
-                                                GameObject index_obj = Functions.GetChild(skill_4_obj, "IndexValue");
-                                                if (!index_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject dropdown_obj = Functions.GetChild(index_obj, "Dropdown");
-                                                    if (!dropdown_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_4_dropdown = dropdown_obj.GetComponent<Dropdown>();
-                                                    }
-                                                }
-                                                GameObject btn_obj = Functions.GetChild(skill_4_obj, "Btn");
-                                                if (!btn_obj.IsNullOrDestroyed())
-                                                {
-                                                    GameObject button_obj = Functions.GetChild(btn_obj, "Button");
-                                                    if (!button_obj.IsNullOrDestroyed())
-                                                    {
-                                                        skill_4_btn = button_obj.GetComponent<Button>();
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
-                }
-                public static void Set_Events()
-                {
-                    if (!clear_url_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(clear_url_btn, clear_url_OnClick_Action);
-                    }
-                    if (!refresh_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(refresh_btn, refresh_OnClick_Action);
-                    }
-                    if (!youtube_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(youtube_btn, youtube_OnClick_Action);
-                    }
-                    if (!twitch_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(twitch_btn, twitch_OnClick_Action);
-                    }
-                    if (!classe_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(classe_btn, classe_OnClick_Action);
-                    }
-                    if (!level_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(level_btn, level_OnClick_Action);
-                    }
-                    if (!items_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(items_btn, items_OnClick_Action);
-                    }
-                    if (!idols_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(idols_btn, idols_OnClick_Action);
-                    }
-                    if (!blessings_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(blessings_btn, blessings_OnClick_Action);
-                    }
-
-                    if (!passives_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(passives_btn, passives_OnClick_Action);
-                    }
-
-                    if (!weavertree_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(weavertree_btn, weavertree_OnClick_Action);
-                    }
-
-                    if (!activeskills_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(activeskills_btn, activeskills_OnClick_Action);
-                    }
-
-                    if (!skilltrees_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(skilltrees_btn, skilltrees_OnClick_Action);
-                    }
-
-                    if (!skill_0_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(skill_0_btn, skill_0_OnClick_Action);
-                    }
-
-                    if (!skill_1_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(skill_1_btn, skill_1_OnClick_Action);
-                    }
-
-                    if (!skill_2_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(skill_2_btn, skill_2_OnClick_Action);
-                    }
-                    if (!skill_3_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(skill_3_btn, skill_3_OnClick_Action);
-                    }
-                    if (!skill_4_btn.IsNullOrDestroyed())
-                    {
-                        Events.Set_Button_Event(skill_4_btn, skill_4_OnClick_Action);
-                    }
-                }
-                public static void Set_Active(bool show)
-                {
-                    if (!content_obj.IsNullOrDestroyed())
-                    {
-                        content_obj.active = show;
-                        enable = show;
-                    }
-                }
-                public static void Toggle_Active()
-                {
-                    if (!content_obj.IsNullOrDestroyed())
-                    {
-                        bool show = !content_obj.active;
-                        content_obj.active = show;
-                        enable = show;
-                    }
-                }
-                public static void Hide()
-                {
-                    if (!profile_text_obj.IsNullOrDestroyed()) { profile_text_obj.active = false; }
-                    if (!profile_dropdown_obj.IsNullOrDestroyed()) { profile_dropdown_obj.active = false; }
-                    if (!_3_obj.IsNullOrDestroyed()) { _3_obj.active = false; }
-                    if (!l_content_obj.IsNullOrDestroyed()) { l_content_obj.active = false; }
-                    if (!r_content_obj.IsNullOrDestroyed()) { r_content_obj.active = false; }
-                    show = false;
-                }
-                public static void Show()
-                {
-                    show = true;
-                    loading = true;
-                    //set profile_dropdown
-                    if (!profile_text_obj.IsNullOrDestroyed()) { profile_text_obj.active = true; }
-                    if (!profile_dropdown.IsNullOrDestroyed())
-                    {
-                        if (!update)
-                        {
-                            profile_dropdown.options.Clear();
-                            foreach (string s in Maxroll_import.Data.profile_names)
-                            {
-                                profile_dropdown.options.Add(new Dropdown.OptionData { text = s });
-                            }
-                        }
-                        update = false;
-                        profile_dropdown.value = Maxroll_import.Data.selected_profile;
-                    }
-                    if (!profile_dropdown_obj.IsNullOrDestroyed()) { profile_dropdown_obj.active = true; }
-                    //Set Copyright
-                    if (!build_name_text.IsNullOrDestroyed()) { build_name_text.text = Maxroll_import.Data.build_name; }
-                    if (!autor_name_text.IsNullOrDestroyed()) { autor_name_text.text = Maxroll_import.Data.autor_name; }
-                    if (!youtube_obj.IsNullOrDestroyed()) { youtube_obj.active = Maxroll_import.Data.youtube; }
-                    youtube_url = Maxroll_import.Data.youtube_url;
-                    if (!twitch_obj.IsNullOrDestroyed()) { twitch_obj.active = Maxroll_import.Data.twitch; }
-                    twitch_url = Maxroll_import.Data.twitch_url;
-                    if (!_3_obj.IsNullOrDestroyed()) { _3_obj.active = true; }
-                    //Set l_content
-                    string class_name = Maxroll_import.Data.class_name;
-                    if (!classe_text.IsNullOrDestroyed()) { classe_text.text = class_name; }
-                    bool IsClass = false;
-                    if ((!classe_btn.IsNullOrDestroyed()) && (!Refs_Manager.character_class_list.IsNullOrDestroyed()) && (!Refs_Manager.player_data.IsNullOrDestroyed()))
-                    {
-                        bool active = true;
-                        int i = 0;
-                        foreach (CharacterClass char_class in Refs_Manager.character_class_list.classes)
-                        {
-                            if (i == Refs_Manager.player_data.CharacterClass)
-                            {
-                                if (char_class.className == class_name) { active = false; }
-                                break;
-                            }
-                            i++;
-                        }
-                        classe_btn.gameObject.active = active;
-                        IsClass = !active;
-                    }
-                    int character_level = Maxroll_import.Data.character_level;
-                    if (!level_text.IsNullOrDestroyed()) { level_text.text = character_level.ToString(); }
-                    if ((!level_btn.IsNullOrDestroyed()) && (!Refs_Manager.player_data.IsNullOrDestroyed()))
-                    {
-                        bool active = true;
-                        if (Refs_Manager.player_data.Level >= character_level) { active = false; }
-                        level_btn.gameObject.active = active;
-                    }
-                    int nb_items = Maxroll_import.Data.nb_items;
-                    if (!items_text.IsNullOrDestroyed()) { items_text.text = "Count = " + nb_items; }
-                    if (!items_btn.IsNullOrDestroyed())
-                    {
-                        bool active = false;
-                        if (nb_items > 0) { active = true; }
-                        items_btn.gameObject.active = active;
-                    }
-                    int nb_idols = Maxroll_import.Data.nb_idols;
-                    if (!idols_text.IsNullOrDestroyed()) { idols_text.text = "Count = " + nb_idols; }
-                    if (!idols_btn.IsNullOrDestroyed())
-                    {
-                        bool active = false;
-                        if (nb_idols > 0) { active = true; }
-                        idols_btn.gameObject.active = active;
-                    }
-                    int nb_blessings = Maxroll_import.Data.nb_blessings;
-                    if (!blessings_text.IsNullOrDestroyed()) { blessings_text.text = "Count = " + nb_blessings; }
-                    if (!blessings_btn.IsNullOrDestroyed())
-                    {
-                        bool active = false;
-                        if (nb_blessings > 0) { active = true; }
-                        blessings_btn.gameObject.active = active;
-                    }
-                    int nb_passives = Maxroll_import.Data.nb_passives;
-                    if (!passives_text.IsNullOrDestroyed()) { passives_text.text = nb_passives + " points"; }
-                    if (!passives_btn.IsNullOrDestroyed())
-                    {
-                        bool active = false;
-                        if (nb_passives > 0) { active = true; }
-                        passives_btn.gameObject.active = active;
-                    }
-                    int nb_weavertree = Maxroll_import.Data.nb_weavertree;
-                    if (!weavertree_text.IsNullOrDestroyed()) { weavertree_text.text = nb_weavertree + " points"; }
-                    if (!weavertree_btn.IsNullOrDestroyed())
-                    {
-                        bool active = false;
-                        if (nb_weavertree > 0) { active = true; }
-                        weavertree_btn.gameObject.active = active;
-                    }
-                    if (!l_content_obj.IsNullOrDestroyed()) { l_content_obj.active = true; }
-                    //Set r_content
-                    if (!mainskill_text.IsNullOrDestroyed()) { mainskill_text.text = Maxroll_import.Data.mainskill_name; }
-                    if (!mainskill_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.mainskill_icon.IsNullOrDestroyed())
-                        {
-                            mainskill_image.gameObject.active = true;
-                            mainskill_image.sprite = Maxroll_import.Data.mainskill_icon;
-                        }
-                        else { mainskill_image.gameObject.active = false; }
-                    }
-                    if (!activeskill_0_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.active_icons[0].IsNullOrDestroyed())
-                        {
-                            activeskill_0_image.gameObject.active = true;
-                            activeskill_0_image.sprite = Maxroll_import.Data.active_icons[0];
-                        }
-                        else { activeskill_0_image.gameObject.active = false; }                            
-                    }
-                    if (!activeskill_1_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.active_icons[1].IsNullOrDestroyed())
-                        {
-                            activeskill_1_image.gameObject.active = true;
-                            activeskill_1_image.sprite = Maxroll_import.Data.active_icons[1];
-                        }
-                        else { activeskill_1_image.gameObject.active = false; }
-                    }
-                    if (!activeskill_2_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.active_icons[2].IsNullOrDestroyed())
-                        {
-                            activeskill_2_image.gameObject.active = true;
-                            activeskill_2_image.sprite = Maxroll_import.Data.active_icons[2];
-                        }
-                        else { activeskill_2_image.gameObject.active = false; }
-                    }
-                    if (!activeskill_3_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.active_icons[3].IsNullOrDestroyed())
-                        {
-                            activeskill_3_image.gameObject.active = true;
-                            activeskill_3_image.sprite = Maxroll_import.Data.active_icons[3];
-                        }
-                        else { activeskill_3_image.gameObject.active = false; }
-                    }
-                    if (!activeskill_4_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.active_icons[4].IsNullOrDestroyed())
-                        {
-                            activeskill_4_image.gameObject.active = true;
-                            activeskill_4_image.sprite = Maxroll_import.Data.active_icons[4];
-                        }
-                        else { activeskill_4_image.gameObject.active = false; }
-                    }
-                    if (!activeskills_btn.IsNullOrDestroyed())
-                    {
-                        if (IsClass) { activeskills_btn.gameObject.active = true; }
-                        else { activeskills_btn.gameObject.active = false; }
-                    }
-                    if (skilltrees_btn.IsNullOrDestroyed())
-                    {
-                        if (IsClass) { skilltrees_btn.gameObject.active = true; }
-                        else { skilltrees_btn.gameObject.active = false; }
-                    }
-                    if (skill_0_btn.IsNullOrDestroyed())
-                    {
-                        if (IsClass) { skill_0_btn.gameObject.active = true; }
-                        else { skill_0_btn.gameObject.active = false; }
-                    }
-                    if (!skill_0_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.specialized_icons[0].IsNullOrDestroyed())
-                        {
-                            skill_0_image.gameObject.active = true;
-                            skill_0_image.sprite = Maxroll_import.Data.specialized_icons[0];
-                        }
-                        else { skill_0_image.gameObject.active = false; }
-                    }
-                    if (!skill_0_text.IsNullOrDestroyed())
-                    {
-                        skill_0_text.text = Maxroll_import.Data.specialized_names[0];                        
-                        if (!skill_0_btn.IsNotNullOrDestroyed())
-                        {
-                            bool active = false;
-                            if (skill_0_text.text != "") { active = true; }
-                            skill_0_btn.gameObject.active = active;
-                        }
-                    }
-                    if (skill_1_btn.IsNullOrDestroyed())
-                    {
-                        if (IsClass) { skill_1_btn.gameObject.active = true; }
-                        else { skill_1_btn.gameObject.active = false; }
-                    }
-                    if (!skill_1_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.specialized_icons[1].IsNullOrDestroyed())
-                        {
-                            skill_1_image.gameObject.active = true;
-                            skill_1_image.sprite = Maxroll_import.Data.specialized_icons[1];
-                        }
-                        else { skill_1_image.gameObject.active = false; }
-                    }
-                    if (!skill_1_text.IsNullOrDestroyed())
-                    {
-                        skill_1_text.text = Maxroll_import.Data.specialized_names[1];
-                        if (!skill_1_btn.IsNotNullOrDestroyed())
-                        {
-                            bool active = false;
-                            if (skill_1_text.text != "") { active = true; }
-                            skill_1_btn.gameObject.active = active;
-                        }
-                    }
-                    if (skill_2_btn.IsNullOrDestroyed())
-                    {
-                        if (IsClass) { skill_2_btn.gameObject.active = true; }
-                        else { skill_2_btn.gameObject.active = false; }
-                    }
-                    if (!skill_2_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.specialized_icons[2].IsNullOrDestroyed())
-                        {
-                            skill_2_image.gameObject.active = true;
-                            skill_2_image.sprite = Maxroll_import.Data.specialized_icons[2];
-                        }
-                        else { skill_2_image.gameObject.active = false; }
-                    }
-                    if (!skill_2_text.IsNullOrDestroyed())
-                    {
-                        skill_2_text.text = Maxroll_import.Data.specialized_names[2];
-                        if (!skill_2_btn.IsNotNullOrDestroyed())
-                        {
-                            bool active = false;
-                            if (skill_2_text.text != "") { active = true; }
-                            skill_2_btn.gameObject.active = active;
-                        }
-                    }
-                    if (skill_3_btn.IsNullOrDestroyed())
-                    {
-                        if (IsClass) { skill_3_btn.gameObject.active = true; }
-                        else { skill_3_btn.gameObject.active = false; }
-                    }
-                    if (!skill_3_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.specialized_icons[3].IsNullOrDestroyed())
-                        {
-                            skill_3_image.gameObject.active = true;
-                            skill_3_image.sprite = Maxroll_import.Data.specialized_icons[3];
-                        }
-                        else { skill_3_image.gameObject.active = false; }
-                    }
-                    if (!skill_3_text.IsNullOrDestroyed())
-                    {
-                        skill_3_text.text = Maxroll_import.Data.specialized_names[3];
-                        if (!skill_3_btn.IsNotNullOrDestroyed())
-                        {
-                            bool active = false;
-                            if (skill_3_text.text != "") { active = true; }
-                            skill_3_btn.gameObject.active = active;
-                        }
-                    }
-                    if (skill_4_btn.IsNullOrDestroyed())
-                    {
-                        if (IsClass) { skill_4_btn.gameObject.active = true; }
-                        else { skill_4_btn.gameObject.active = false; }
-                    }
-                    if (!skill_4_image.IsNullOrDestroyed())
-                    {
-                        if (!Maxroll_import.Data.specialized_icons[4].IsNullOrDestroyed())
-                        {
-                            skill_4_image.gameObject.active = true;
-                            skill_4_image.sprite = Maxroll_import.Data.specialized_icons[4];
-                        }
-                        else { skill_4_image.gameObject.active = false; }
-                    }
-                    if (!skill_4_text.IsNullOrDestroyed())
-                    {
-                        skill_4_text.text = Maxroll_import.Data.specialized_names[4];
-                        if (!skill_0_btn.IsNotNullOrDestroyed())
-                        {
-                            bool active = false;
-                            if (skill_4_text.text != "") { active = true; }
-                            skill_4_btn.gameObject.active = active;
-                        }
-                    }
-                    if (!r_content_obj.IsNullOrDestroyed()) { r_content_obj.active = true; }
-                    loading = false;
                 }
             }
         }

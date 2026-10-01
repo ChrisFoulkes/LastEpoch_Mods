@@ -1,8 +1,9 @@
 ﻿using HarmonyLib;
+using Il2CppLE.UI.Minimap;
 
 namespace LastEpoch_Hud.Scripts.Mods.Minimap
 {
-    public class Minimap_FogOfWar
+    internal class Minimap_FogOfWar
     {
         public static bool CanRun()
         {
@@ -17,14 +18,19 @@ namespace LastEpoch_Hud.Scripts.Mods.Minimap
             else { return false; }
         }
 
-        [HarmonyPatch(typeof(Il2CppLE.UI.Minimap.Minimap), "OnInitializeFoW")]
-        public class Minimap_OnInitializeFoW
+        [HarmonyPatch(typeof(Il2CppLE.UI.Minimap.Minimap), "Awake")]
+        public class Minimap_Awake
         {
             [HarmonyPostfix]
             static void Postfix(Il2CppLE.UI.Minimap.Minimap __instance)
             {
-                if (CanRun()) { __instance.RevealRadius = 255f; }
-                else if (__instance.RevealRadius == 255f) { __instance.RevealRadius = 40f; } //Default value
+                if (!CanRun() || __instance.IsNullOrDestroyed())
+                {
+                    return;
+                }
+
+                __instance.RevealRadius = int.MaxValue;
+                __instance.maxDistance = int.MaxValue;
             }
         }
     }

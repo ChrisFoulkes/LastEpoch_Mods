@@ -17,7 +17,7 @@ namespace LastEpoch_Hud.Scripts.Mods.Character
 		{
 			if ((Scenes.IsGameScene()) && (!Refs_Manager.game_uibase.IsNullOrDestroyed()) && (!Save_Manager.instance.IsNullOrDestroyed()))
 			{
-				if (Input.GetKeyDown(Save_Manager.instance.data.KeyBinds.BankStashs))
+				if (Input.GetKeyDown(Save_Manager.instance.data.KeyBinds.BankStashs) && Save_Manager.instance.data.KeyBinds.BankStashs != Hud_Manager.MenuKey)
 				{
 					if (IsOpen()) { Refs_Manager.game_uibase.closeStash(false); }
 					else { Refs_Manager.game_uibase.openStash(true, false); }
@@ -27,10 +27,9 @@ namespace LastEpoch_Hud.Scripts.Mods.Character
 		bool IsOpen()
 		{
 			bool result = false;
-			if (!Refs_Manager.stash_panel_ui.IsNullOrDestroyed()) { result = Refs_Manager.stash_panel_ui.gameObject.active; }
-            //if (!Refs_Manager.game_uibase.IsNullOrDestroyed()) { result = Refs_Manager.game_uibase.stashPanel.instance.active; }
+			if (!Refs_Manager.game_uibase.IsNullOrDestroyed()) { result = Refs_Manager.game_uibase.IsStashOpen(); }
 
-            return result;
+			return result;
         }
 	}
 }

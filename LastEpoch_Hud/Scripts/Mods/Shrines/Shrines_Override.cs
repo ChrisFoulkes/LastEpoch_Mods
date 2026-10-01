@@ -59,16 +59,19 @@ namespace LastEpoch_Hud.Scripts.Mods.Shrines
             else { return false; }
         }
 
-        [HarmonyPatch(typeof(ShrinePlacementManager), "PlaceNewShrine", new System.Type[] { typeof(GameObject), typeof(Vector3) })]
-        public class ShrinePlacementManager_PlaceNewShrine
+        [HarmonyPatch(typeof(ShrinesManager), "PlaceNewShrine", new System.Type[] { typeof(int), typeof(Vector3) })]
+        public class ShrinesManager_PlaceNewShrine
         {
             [HarmonyPrefix]
-            static void Prefix(ref GameObject __0)
+            static void Prefix(ref int __0)
             {
                 if (CanRun())
                 {
                     int id = Save_Manager.instance.data.modsNotInHud.Shrines_Override_id;
-                    if (id < ShrineList.instance.entries.Count) { __0 = ShrineList.instance.entries[id].prefab; }
+                    if (!ShrineList.get().IsNullOrDestroyed() && id >= 0 && id < ShrineList.get().entries.Count)
+                    {
+                        __0 = id;
+                    }
                 }
             }
         }

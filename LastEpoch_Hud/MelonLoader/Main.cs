@@ -5,6 +5,7 @@ using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Il2Cpp;
+using Il2CppLE.AssetBundles;
 using System.IO;
 using System.Collections.Generic;
 using Newtonsoft.Json;
@@ -23,7 +24,6 @@ namespace LastEpoch_Hud
         public override void OnInitializeMelon()
         {
             logger_instance = LoggerInstance;
-            Scripts.Mods.Localization.LocalizationOverride.RegisterAll();
         }
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
@@ -33,17 +33,9 @@ namespace LastEpoch_Hud
         {
             Scenes.SceneName = SceneManager.GetActiveScene().name;
         }
-        static bool diagnosticsAttachAttempted = false;
         public override void OnLateUpdate()
         {
             if ((!Base.Initializing) && (!Base.Initialized)) { Base.Init(); }
-            if (!diagnosticsAttachAttempted
-                && Scripts.ModUI.SaveManager.instance != null
-                && Scripts.ModUI.SaveManager.instance.initialized)
-            {
-                diagnosticsAttachAttempted = true;
-                Scripts.Mods.Diagnostics.DiagnosticsDumper.AttachIfEnabled();
-            }
         }
         public override void OnApplicationQuit()
         {
@@ -134,9 +126,7 @@ namespace LastEpoch_Hud
             base_object.AddComponent<Scripts.Refs_Manager>();
             base_object.AddComponent<Scripts.Save_Manager>();
             base_object.AddComponent<Scripts.Hud_Manager>();
-            base_object.AddComponent<Scripts.ModUI.SaveManager>();
             base_object.AddComponent<Scripts.Mods_Manager>();
-            base_object.AddComponent<Scripts.VirtualKeyboard>();
             Initialized = true;
             Initializing = false;
         }
@@ -192,12 +182,24 @@ namespace LastEpoch_Hud
                         break;
                     }
                 }
-                string[] no_bug = { "skin", "Modifier Button", "legendary_icon", "quad_stash_row", "Hud_VirtualKeyboard" };
+                string[] no_bug = { "skin", "Modifier Button", "legendary_icon", "quad_stash_row" };
                 if ((!found) && (!no_bug.Contains(name))) { Main.logger_instance?.Error("Functions.GetChild, Child : " + name + " not Found"); }
             }
             else { Main.logger_instance.Error("GetChild(" + name + ") : Obj is null"); }
 
             return result;
+        }
+        public static GameObject FindDescendant(GameObject obj, string name)
+        {
+            if (obj.IsNullOrDestroyed()) { return null; }
+            for (int i = 0; i < obj.transform.childCount; i++)
+            {
+                GameObject child = obj.transform.GetChild(i).gameObject;
+                if (child.name == name) { return child; }
+                GameObject nested = FindDescendant(child, name);
+                if (!nested.IsNullOrDestroyed()) { return nested; }
+            }
+            return null;
         }
         public static List<GameObject> GetAllChild(GameObject obj)
         {
@@ -347,11 +349,38 @@ namespace LastEpoch_Hud
         }
         public static Sprite GetItemIcon(ItemDataUnpacked item)
         {
-            Sprite result = null; // new Sprite();
-            try { result = UITooltipItem.GetItemSprite(item, ItemUIContext.Default); }
-            catch { Main.logger_instance?.Error("Error GetItemIcon"); }
+            if (item == null)
+            {
+                return null;
+            }
 
-            return result;
+            LoadRef<Sprite> loadRef = null;
+            try
+            {
+                SoftRef<Sprite> softRef = item.GetItemSpriteFromData(ItemUIContext.Default);
+                if (softRef == null || !softRef)
+                {
+                    return null;
+                }
+
+                loadRef = SoftRefExtensions.CreateLoadRef(softRef, "LastEpoch_Hud", 0);
+                if (loadRef == null)
+                {
+                    return null;
+                }
+
+                loadRef.BlockForLoad();
+                return loadRef.AssetOrNull;
+            }
+            catch
+            {
+                Main.logger_instance?.Error("Error GetItemIcon");
+                return null;
+            }
+            finally
+            {
+                loadRef?.Dispose();
+            }
         }
         public static bool CheckClass(int classe, ItemList.ClassRequirement req)
         {

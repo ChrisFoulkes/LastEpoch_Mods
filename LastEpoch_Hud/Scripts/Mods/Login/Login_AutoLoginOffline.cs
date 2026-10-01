@@ -1,4 +1,4 @@
-using HarmonyLib;
+﻿using HarmonyLib;
 
 namespace LastEpoch_Hud.Scripts.Mods.Login
 {
@@ -6,41 +6,26 @@ namespace LastEpoch_Hud.Scripts.Mods.Login
     {
         public static bool CanRun()
         {
-            bool r = false;
             if (!Save_Manager.instance.IsNullOrDestroyed())
             {
                 if (!Save_Manager.instance.data.IsNullOrDestroyed())
                 {
-                    r = Save_Manager.instance.data.Login.Enable_AutoLoginOffline;
+                    return Save_Manager.instance.data.Login.Enable_AutoLoginOffline;
                 }
+                else { return false; }
             }
-
-            return r;
+            else { return false; }
         }
-
-        [HarmonyPatch(typeof(Il2CppLE.UI.Login.UnityUI.LandingZonePanel), "OnOnEnable")]
-        public class LandingZonePanel_OnOnEnable
+        /*public static void Hide_Online(ref Il2CppLE.UI.Login.UnityUI.LandingZonePanel __instance)
         {
-            [HarmonyPostfix]
-            static void Postfix(ref Il2CppLE.UI.Login.UnityUI.LandingZonePanel __instance)
-            {
-                if (CanRun())
-                    __instance.OnPlayOfflineClicked();
-            }
-        }
-
-        [HarmonyPatch(typeof(Il2CppLE.UI.Login.UnityUI.LandingZonePanel), "OnPlayOnlineClicked")]
-        public class LandingZonePanel_BlockOnline
+            if (!__instance.playOnlineButton.IsNullOrDestroyed()) { __instance.playOnlineButton.gameObject.SetActive(false); }
+            if (!__instance.manageAccountButton.IsNullOrDestroyed()) { __instance.manageAccountButton.gameObject.SetActive(false); }
+        }*/
+        public static void AutoClickOffline(ref Il2CppLE.UI.Login.UnityUI.LandingZonePanel __instance)
         {
-            [HarmonyPrefix]
-            static bool Prefix() => !CanRun();
-        }
-
-        [HarmonyPatch(typeof(Il2Cpp.CharacterSelect), "SwitchOnlineOffline")]
-        public class CharacterSelect_BlockSwitch
-        {
-            [HarmonyPrefix]
-            static bool Prefix() => !CanRun();
+            // Do not call OnPlayOfflineClicked from OnEnable. On the current client that
+            // hides the landing buttons and the Play Offline screen never finishes opening.
+            __instance.OnPlayOfflineClicked();
         }
     }
 }

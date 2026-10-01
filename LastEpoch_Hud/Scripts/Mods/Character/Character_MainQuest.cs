@@ -134,10 +134,10 @@ namespace LastEpoch_Hud.Scripts.Mods.Character
                     }
                 }*/
 
-                //Main.logger_instance?.Msg("Unlock Portal");
-                //UnlockPortalInteraction.unlockPortal(Refs_Manager.player_actor.gameObject);
-                //bool monolith_waypoint_unlock = Refs_Manager.player_data.UnlockedWaypointScenes.Contains(monolith_scene);
-                //if (!monolith_waypoint_unlock) { Refs_Manager.player_data.UnlockedWaypointScenes.Add(monolith_scene); }
+                Main.logger_instance?.Msg("Unlock Portal");
+                UnlockPortalInteraction.unlockPortal(Refs_Manager.player_actor.gameObject);
+                bool monolith_waypoint_unlock = Refs_Manager.player_data.UnlockedWaypointScenes.Contains(monolith_scene);
+                if (!monolith_waypoint_unlock) { Refs_Manager.player_data.UnlockedWaypointScenes.Add(monolith_scene); }
                 
                 Main.logger_instance?.Msg("Level Character to 58");
                 Character_Level.LevelUpToLevel(58);             
@@ -145,23 +145,15 @@ namespace LastEpoch_Hud.Scripts.Mods.Character
                 Main.logger_instance?.Msg("Save Character");
                 Refs_Manager.player_data.SaveData();
 
-                Main.logger_instance?.Msg("Tp to the End of Time");
-                Teleport.Teleport_ToScene.StartTpToScene(monolith_scene);
-
-                /*if (!Refs_Manager.game_uibase.IsNullOrDestroyed())
+                if (!Refs_Manager.game_uibase.IsNullOrDestroyed())
                 {
                     Main.logger_instance?.Msg("Open Map");
                     Refs_Manager.game_uibase.openMap();
-                    //if (!Refs_Manager.game_uibase.map.instance.IsNullOrDestroyed())
-                    //{
+                    MapPanel map_panel = UnityEngine.Object.FindObjectOfType<MapPanel>();
+                    if (!map_panel.IsNullOrDestroyed())
+                    {
                         Main.logger_instance?.Msg("Open Era");
-
-                        
-                        //MapPanel map_panel = Refs_Manager.game_uibase.map.instance.GetComponent<MapPanel>();
-                        if (!Refs_Manager.map_panel.IsNullOrDestroyed())
-                        {
-                            Refs_Manager.map_panel.OpenEra(Refs_Manager.map_panel.eras[Refs_Manager.map_panel.eras.Count - 1].era, false);
-                        }
+                        map_panel.OpenEra(map_panel.eras[map_panel.eras.Count - 1].era, false);
 
                         Main.logger_instance?.Msg("Get Waypoint");
                         UIWaypointStandard waypoint = GetWaypoint(monolith_scene, 0);
@@ -171,9 +163,9 @@ namespace LastEpoch_Hud.Scripts.Mods.Character
                             Main.logger_instance?.Msg("Tp to Waypoint");
                             waypoint.LoadWaypointScene();
                         }
-                    //}
-                    //else { Main.logger_instance?.Error("Map instance is null"); }
-                }*/
+                    }
+                    else { Main.logger_instance?.Error("Map instance is null"); }
+                }
             }
         }
         private static UIWaypointStandard GetWaypoint(string name, byte gate)

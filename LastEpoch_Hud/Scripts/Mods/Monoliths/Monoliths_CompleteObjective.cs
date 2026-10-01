@@ -41,7 +41,7 @@ namespace LastEpoch_Hud.Scripts.Mods.Monoliths
         }
         void Update()
         {
-            //if (Input.GetKeyDown(KeyCode.F10)) { RevealIslands(); } //Debug
+            if (Input.GetKeyDown(KeyCode.F10)) { RevealIslands(); } //Debug
 
             if (monolith_zone_manager.IsNullOrDestroyed()) { initialized = false; started = false; }
             if (initialized)
@@ -83,11 +83,12 @@ namespace LastEpoch_Hud.Scripts.Mods.Monoliths
                             {
                                 if (monolith_zone_manager.waveSpawner.spawnsRemaining.Count > 0)
                                 {
-                                    GameObject obj = monolith_zone_manager.waveSpawner.spawnsRemaining[0];
-                                    if (!obj.IsNullOrDestroyed())
+                                    Actor actor = monolith_zone_manager.waveSpawner.spawnsRemaining[0];
+                                    if (!actor.IsNullOrDestroyed())
                                     {
-                                        obj.transform.position = Get_PlayerPosition();
-                                        obj.GetComponent<Dying>().die();
+                                        actor.transform.position = Get_PlayerPosition();
+                                        var dying = actor.GetComponent<Dying>();
+                                        if (!dying.IsNullOrDestroyed()) { dying.die(); }
                                     }
                                 }
                                 else if (!monolith_zone_manager.waveSpawner.isLastWave) { monolith_zone_manager.waveSpawner.spawnWave(); }
@@ -390,16 +391,13 @@ namespace LastEpoch_Hud.Scripts.Mods.Monoliths
         //Debug
         public static MonolithTimelinePanelManager monolith_timeline_panel_manager = null;
 
-        /*public static void RevealIslands()
+        public static void RevealIslands()
         {
             if (!monolith_timeline_panel_manager.IsNullOrDestroyed())
             {
-                monolith_timeline_panel_manager.revealEchoesAroundIslands();
-                monolith_timeline_panel_manager.createEchoWebVisuals(monolith_timeline_panel_manager.web, 1);
-                monolith_timeline_panel_manager.forceRebuildLayoutAfterFrame();
-                monolith_timeline_panel_manager.webView.hasChanged = true;
+                Main.logger_instance?.Msg("RevealIslands is unavailable on this game version.");
             }
-        }*/
+        }
 
         [HarmonyPatch(typeof(MonolithTimelinePanelManager), "OnEnable")]
         public class MonolithTimelinePanelManager_OnEnable

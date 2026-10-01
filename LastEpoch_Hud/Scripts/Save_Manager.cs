@@ -17,12 +17,9 @@ namespace LastEpoch_Hud.Scripts
         public Data.Mods_Structure data_duplicate = new Data.Mods_Structure();
         public bool initialized = false;
 
-        const int CheckEveryNFrames = 60;
-        int check_counter = 0;
-
         void Awake()
         {
-            instance = this;
+            instance = this;  
         }
         async void Start()
         {
@@ -30,10 +27,7 @@ namespace LastEpoch_Hud.Scripts
         }
         void Update()
         {
-            if (!initialized) { return; }
-            if (++check_counter < CheckEveryNFrames) { return; }
-            check_counter = 0;
-            Check_DataChanged();
+            if (initialized) { Check_DataChanged(); }
         }
         
         void Load()
@@ -41,7 +35,7 @@ namespace LastEpoch_Hud.Scripts
             bool error = false;
             if (File.Exists(path + filename))
             {
-                Main.logger_instance?.Msg("Save Manager : Loading file : " + path + filename);                
+                Main.logger_instance?.Msg("Save Manager : Loading file : " + path + filename);
                 try { data = JsonConvert.DeserializeObject<Data.Mods_Structure>(File.ReadAllText(path + filename)); }
                 catch
                 {
@@ -52,13 +46,13 @@ namespace LastEpoch_Hud.Scripts
             else { error = true; }
             if (error)
             {
-                Main.logger_instance.Msg("Save Manager : Generate default config");
+                Main.logger_instance?.Msg("Save Manager : Generate default config");
                 data = Get_DefaultConfig();
                 Save();
             }
             Check_Update();
             data_duplicate = data; //Use to check for data changed
-            Main.logger_instance.Msg("Save Manager : Data initialized");
+            Main.logger_instance?.Msg("Save Manager : Data initialized");
             initialized = true;
         }
         Data.Mods_Structure Get_DefaultConfig()
@@ -68,23 +62,16 @@ namespace LastEpoch_Hud.Scripts
                 ModVersion = Main.mod_version,
                 KeyBinds =
                 {
-                    SpawnMysteriousRift = KeyCode.F1,
-                    SpawnRiftBeast = KeyCode.F2,
-                    BankStashs = KeyCode.F3,
-                    SummonBeast = KeyCode.F4
+                    BankStashs = KeyCode.F3
                 },
                 modsNotInHud =
                 {
+                    Enable_PotionResplenishment = false,
+                    Craft_Seal_Tier = 0,                            //When using glyph of despair, set seal tier to : 0 = T1, 1 = T2, 2 = T3, 3 = T4, 4 = T5, 5 = T6, 6 = T7
+                    Craft_No_Forgin_Potencial_Cost = true,           //When add or upgrade normal item with tier < T5
                     Shrines_Unlimited = false,                      //Unlimited Shrine Click
                     Shrines_Override = false,                       //Change Shrine with another shrines
-                    Shrines_Override_id = 0,                        //see Scripts.Mods.Shrines.Shrines_Override.cs
-                    Craft_MaxTier = false,                          //Allow craft to T8
-                    //Craft_Corrupted = false                       //Allow craft corrupted item
-                },
-                DamageMeter =
-                {
-                    DamageType = 0,                                 //0 = Percent, 1 = Flat
-                    SeparateHitAndDot = false
+                    Shrines_Override_id = 0                         //see Shrines_Override.cs
                 },
                 Login =
                 {
@@ -118,8 +105,7 @@ namespace LastEpoch_Hud.Scripts
                         GoldDropMultiplier = 0f,
                         Enable_MemoryAmberMultiplier = false,
                         MemoryAmberMultiplier = 1,
-                        Enable_WaypointsUnlock = false,
-                        Enable_PotionResplenishment = false,
+                        Enable_WaypointsUnlock = false
                     },
                     PermanentBuffs =
                     {
@@ -150,24 +136,11 @@ namespace LastEpoch_Hud.Scripts
                         Dex_Buff_Value = 0f,
                         Enable_Att_Buff = false,
                         Att_Buff_Value = 0f
-                    },
-                    Visuals =
-                    {
-                        Primalist = "Primalist",
-                        Mage = "Mage",
-                        Sentinel = "Sentinel",
-                        Acolyte = "Acolyte",
-                        Rogue = "Rogue"
                     }
                 },
-                Factions =
+                Cosmetics =
                 {
-                    TheWoven =
-                    {
-                        Enable_TreePoints = false,
-                        TreePoints = 0,
-                        Enable_FreeRespe = false
-                    }
+                    Portal = 0 //0 to 38
                 },
                 Items =
                 {
@@ -228,11 +201,6 @@ namespace LastEpoch_Hud.Scripts
                         Enable_AutoStore_Timer = false,
                         AutoStore_Timer = 10,
                         Enable_AutoSell_FromFilter = false,
-                        Enable_AutoShatter_FromFilter = false,
-                        Enable_AutoShatter_UseRune = true,
-                        AutoShatter_Chance = 100,
-                        AutoShatter_Affix_Chance = 100,
-                        AutoShatter_Quantity_Chance = 100,
                         Enable_RangePickup = false,
                         Enable_HideMaterialsNotifications = false
                     },
@@ -293,66 +261,42 @@ namespace LastEpoch_Hud.Scripts
                         LegendaryPotencial = 4,
                         Enable_WeaverWill = false,
                         WeaverWill = 28
-                    }
-                },
-                NewItems =
-                {
+                    },
                     Headhunter =
                     {
+                        enable = true,
+                        BaseDrop = true,
+                        UniqueDrop = true,
                         MinGenerated = 1,
                         MaxGenerated = 5,
                         BuffDuration = 20f,
-                        Stack = 0f,
                         AddValue = 1f,
                         IncreasedValue = 1f,
                         WeaverWill = false
                     },
                     Mjolner =
                     {
+                        enable = true,
+                        BaseDrop = true, UniqueDrop = true,
                         MinTriggerChance = 0.3f,
                         MaxTriggerChance = 0.5f,
                         IntRequirement = 95,
                         StrRequirement = 105,
                         WeaverWill = false,
+                        ProcAnyLightningSpell = true,
                         SocketedCooldown = 250,
                         SockectedSkill_0 = "Lightning Nova",
                         SockectedSkill_1 = "Elemental Nova",
                         SockectedSkill_2 = "Storm Bolt"
-                    },
-                    HeraldOfIce =
+                    }
+                },
+                Factions =
+                {
+                    TheWoven =
                     {
-                        VFX = "Runemaster 15.2 Explosion",
-                        Enable_Radius = false,
-                        Radius = 0f,
-                        WeaverWill = false
-                    },
-                    HeraldOfFire =
-                    {
-                        VFX = "FireballExplosion",
-                        Enable_Radius = false,
-                        Radius = 0f,
-                        WeaverWill = false
-                    },
-                    HeraldOfThunder =
-                    {
-                        VFX = "Runemaster 05c3.1 Runebolt Lightning Explosion",
-                        Enable_Radius = false,
-                        Radius = 0f,
-                        WeaverWill = false
-                    },
-                    HeraldOfAgony =
-                    {
-                        VFX = "NemesisSoldierPoison 03.1 PoisonExplosion",
-                        Enable_Radius = false,
-                        Radius = 0f,
-                        WeaverWill = false
-                    },
-                    HeraldOfPurity =
-                    {
-                        VFX = "RaptorScreech",
-                        Enable_Radius = false,
-                        Radius = 0f,
-                        WeaverWill = false
+                        Enable_TreePoints = false,
+                        TreePoints = 0,
+                        Enable_FreeRespe = false
                     }
                 },
                 Scenes =
@@ -421,10 +365,6 @@ namespace LastEpoch_Hud.Scripts
                             Spirits_Of_Fire = 0
                         },
                         Enable_Islands = false
-                    },
-                    harbringers =
-                    {
-                        Enable_AltarWithoutKey = false
                     }
                 },
                 Skills =
@@ -563,13 +503,7 @@ namespace LastEpoch_Hud.Scripts
                                 Enable_ReduceDecay = false,
                                 decay = 0
                             }
-                    }
-                },
-                Summon =
-                {
-                    Enable_GodMode = false,
-                    Enable_Forever = false,
-                    Enable_DontCollide = false
+                        }
                 }
             };
 
@@ -615,53 +549,43 @@ namespace LastEpoch_Hud.Scripts
                 public ModsNotInHud modsNotInHud;
                 public Login Login;
                 public Character Character;
-                public Factions Factions;
+                public Cosmetics Cosmetics;
                 public Items Items;
-                public NewItems NewItems;
+                public Factions Factions;
                 public Scenes Scenes;
                 public Skills Skills;
-                public Summon Summon;
-                public DamageMeter DamageMeter;
             }
             
             //KeyBinds
             public struct KeyBinds
             {
-                public UnityEngine.KeyCode SpawnMysteriousRift;
-                public UnityEngine.KeyCode SpawnRiftBeast;
-                public UnityEngine.KeyCode SummonBeast;
                 public UnityEngine.KeyCode BankStashs;
             }
-            
-            //Options not in hud
+            //Options not in hud (you have to set in defaultconfig before build)
             public struct ModsNotInHud
             {
+                public bool Enable_PotionResplenishment;
+                public byte Craft_Seal_Tier;
+                public bool Craft_No_Forgin_Potencial_Cost;
                 public bool Shrines_Unlimited;
                 public bool Shrines_Override;
                 public int Shrines_Override_id;
-                public bool Craft_MaxTier;
-                //public bool Craft_Corrupted;
             }
-            
-            //DamageMeter
-            public struct DamageMeter
-            {
-                public int DamageType;
-                public bool SeparateHitAndDot;
-            }
-
             //Login
             public struct Login
             {
+                //public bool Enable_Mods;
                 public bool Enable_AutoLoginOffline;
             }
-            
             //Character
             public struct Character
             {
                 public Cheats Cheats;
                 public PermanentBuffs PermanentBuffs;
-                public Visuals Visuals;
+            }
+            public struct Cosmetics
+            {
+                public ushort Portal;
             }
             public struct Cheats
             {
@@ -690,7 +614,6 @@ namespace LastEpoch_Hud.Scripts
                 public bool Enable_MemoryAmberMultiplier;
                 public uint MemoryAmberMultiplier;
                 public bool Enable_WaypointsUnlock;
-                public bool Enable_PotionResplenishment;
             }
             public struct PermanentBuffs
             {
@@ -723,30 +646,16 @@ namespace LastEpoch_Hud.Scripts
                 public bool Enable_Att_Buff;
                 public float Att_Buff_Value;
             }
-            public struct Visuals
-            {
-                public string Primalist;
-                public string Mage;
-                public string Sentinel;
-                public string Acolyte;
-                public string Rogue;
-            }
 
-            //Summon
-            public struct Summon
-            {
-                public bool Enable_GodMode;
-                public bool Enable_Forever;
-                public bool Enable_DontCollide;
-            }
-            
             //Items
             public struct Items
             {
                 public Drop Drop;
                 public Pickup Pickup;
                 public Req Req;
-                public CraftingSlot CraftingSlot;                
+                public CraftingSlot CraftingSlot;
+                public Headhunter Headhunter;
+                public Mjolner Mjolner;
             }
             public struct Drop
             {
@@ -819,12 +728,6 @@ namespace LastEpoch_Hud.Scripts
 
                 public bool Enable_AutoSell_FromFilter;
 
-                public bool Enable_AutoShatter_FromFilter;
-                public bool Enable_AutoShatter_UseRune;
-                public int AutoShatter_Chance;
-                public int AutoShatter_Affix_Chance;
-                public int AutoShatter_Quantity_Chance;
-
                 public bool Enable_RangePickup;
                 public bool Enable_HideMaterialsNotifications;
             }
@@ -896,74 +799,33 @@ namespace LastEpoch_Hud.Scripts
                 public bool Enable_WeaverWill;
                 public int WeaverWill;
             }
-            
-            //NewItems
-            public struct NewItems
-            {
-                public Headhunter Headhunter;
-                public Mjolner Mjolner;
-                public HeraldOfIce HeraldOfIce;
-                public HeraldOfFire HeraldOfFire;
-                public HeraldOfThunder HeraldOfThunder;
-                public HeraldOfAgony HeraldOfAgony;
-                public HeraldOfPurity HeraldOfPurity;
-            }
             public struct Headhunter
             {
+                public bool enable;
                 public int MinGenerated;
                 public int MaxGenerated;
                 public float BuffDuration;
-                public float Stack;
                 public float AddValue;
                 public float IncreasedValue;
                 public bool WeaverWill;
+                public bool BaseDrop;
+                public bool UniqueDrop;
             }
             public struct Mjolner
             {
+                public bool enable;
                 public float MinTriggerChance;
                 public float MaxTriggerChance;
                 public int IntRequirement;
                 public int StrRequirement;
+                public bool BaseDrop;
+                public bool UniqueDrop;
                 public bool WeaverWill;
+                public bool ProcAnyLightningSpell;
                 public System.Double SocketedCooldown;
                 public string SockectedSkill_0;
                 public string SockectedSkill_1;
                 public string SockectedSkill_2;
-            }
-            public struct HeraldOfIce
-            {
-                public string VFX;
-                public bool Enable_Radius;
-                public float Radius;
-                public bool WeaverWill;
-            }
-            public struct HeraldOfFire
-            {
-                public string VFX;
-                public bool Enable_Radius;
-                public float Radius;
-                public bool WeaverWill;
-            }
-            public struct HeraldOfThunder
-            {
-                public string VFX;
-                public bool Enable_Radius;
-                public float Radius;
-                public bool WeaverWill;
-            }
-            public struct HeraldOfAgony
-            {
-                public string VFX;
-                public bool Enable_Radius;
-                public float Radius;
-                public bool WeaverWill;
-            }
-            public struct HeraldOfPurity
-            {
-                public string VFX;
-                public bool Enable_Radius;
-                public float Radius;
-                public bool WeaverWill;
             }
 
             //Factions
@@ -971,6 +833,7 @@ namespace LastEpoch_Hud.Scripts
             {
                 public TheWoven TheWoven;
             }
+
             public struct TheWoven
             {
                 public bool Enable_TreePoints;
@@ -985,7 +848,6 @@ namespace LastEpoch_Hud.Scripts
                 public Dungeons Dungeons;
                 public Minimap Minimap;
                 public Monoliths Monoliths;
-                public Harbringers harbringers;
             }
             public struct Camera
             {
@@ -1067,10 +929,6 @@ namespace LastEpoch_Hud.Scripts
                 public int The_Last_Ruins;
                 public int The_Age_Of_Winter;
                 public int Spirits_Of_Fire;
-            }
-            public struct Harbringers
-            {
-                public bool Enable_AltarWithoutKey;
             }
 
             //Skills

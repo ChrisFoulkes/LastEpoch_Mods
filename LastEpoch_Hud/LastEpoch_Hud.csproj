@@ -1,30 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net6.0</TargetFrameworks>
+    <LastEpochPath Condition="'$(LastEpochPath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Last Epoch</LastEpochPath>
     <OutputType>Library</OutputType>
-    <Nullable>disable</Nullable>
+	<Nullable>disable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <BaseOutputPath>..\Build</BaseOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Configurations>Keyboard;WinGamepad</Configurations>
-    <Configuration Condition="'$(Configuration)' != 'WinGamepad'">Keyboard</Configuration>
-    <ProduceReferenceAssembly>False</ProduceReferenceAssembly>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' != 'WinGamepad'">
-    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
-    <DefineConstants>KEYBOARD</DefineConstants>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+  <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' == 'WinGamepad'">
-    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
-    <DefineConstants>WINGAMEPAD</DefineConstants>
-  </PropertyGroup>
-  <PropertyGroup
-    Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Keyboard|net6.0|AnyCPU'">
-    <DebugType>none</DebugType>
-  </PropertyGroup>
-  <PropertyGroup
-    Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='WinGamepad|net6.0|AnyCPU'">
-    <DebugType>none</DebugType>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+  <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
   </PropertyGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net6.0'">
     <Reference Include="AssetsTools.NET">
@@ -60,8 +48,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="Il2CppSystem.IO.Compression.FileSystem">
-      <HintPath>
-        $(LastEpochPath)\MelonLoader\Il2CppAssemblies\Il2CppSystem.IO.Compression.FileSystem.dll</HintPath>
+      <HintPath>$(LastEpochPath)\MelonLoader\Il2CppAssemblies\Il2CppSystem.IO.Compression.FileSystem.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Il2CppSystem.Numerics">
@@ -133,8 +120,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>
-        $(LastEpochPath)\MelonLoader\Dependencies\Il2CppAssemblyGenerator\UnityDependencies\UnityEngine.dll</HintPath>
+      <HintPath>$(LastEpochPath)\MelonLoader\Dependencies\Il2CppAssemblyGenerator\UnityDependencies\UnityEngine.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.AssetBundleModule">
@@ -171,6 +157,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Scripts\Mods\Items\Items_Temporalis.txt" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Lib.Harmony" Version="2.3.1.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
@@ -179,20 +168,16 @@
       <HintPath>$(LastEpochPath)\MelonLoader\Il2CppAssemblies\Il2CppCSharp.OperationResult.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Il2CppLE.Addressables">
+      <HintPath>$(LastEpochPath)\MelonLoader\Il2CppAssemblies\Il2CppLE.Addressables.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="Il2CppRewired_Core">
       <HintPath>$(LastEpochPath)\MelonLoader\Il2CppAssemblies\Il2CppRewired_Core.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Unity.Addressables">
       <HintPath>$(LastEpochPath)\MelonLoader\Il2CppAssemblies\Unity.Addressables.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.AIModule">
-      <HintPath>$(LastEpochPath)\MelonLoader\Il2CppAssemblies\UnityEngine.AIModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>$(LastEpochPath)\MelonLoader\Il2CppAssemblies\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -206,14 +191,8 @@
     <None Update="LastEpoch_Hud\Locales\en.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="LastEpoch_Hud\Locales\fr.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Update="LastEpoch_Hud\Locales\zh.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(SkipPostBuild)' != 'true'">
-    <Exec Command="call &quot;$(ProjectDir)MakeLatest.bat&quot;" />
-  </Target>
 </Project>

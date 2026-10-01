@@ -20,8 +20,6 @@ namespace LastEpoch_Hud.Scripts.Mods.Skills
 
                     if (!ability.IsNullOrDestroyed())
                     {
-                        //Main.logger_instance.Msg("Ability = " + ability.abilityName);
-
                         if (Save_Manager.instance.data.Skills.Enable_RemoveChannelCost) { ability.channelCost = 0f; }
                         if (Save_Manager.instance.data.Skills.Enable_RemoveManaCost)
                         {
@@ -58,23 +56,7 @@ namespace LastEpoch_Hud.Scripts.Mods.Skills
                     
                     if (!il2cpp_type.IsNullOrDestroyed())
                     {
-                        //Main.logger_instance.Msg("Mutator = " + il2cpp_type.ToString());
-
                         //Use Switch(il2cpp_type.ToString()) instead of if for better result (== is bad)
-
-                        //Fireball : Fix ManaCost
-                        if (il2cpp_type.ToString() == "FireballMutator")
-                        {
-                            var ab = __1.TryCast<FireballMutator>();
-                            if (!ab.IsNullOrDestroyed())
-                            {
-                                if (Save_Manager.instance.data.Skills.Enable_RemoveManaCost)
-                                {
-                                    ab.addedManaCost = 0f;
-                                    ab.increasedManaCost = 0f;
-                                }
-                            }
-                        }
 
                         //ErasingStrike : Fix ManaCost
                         if (il2cpp_type.ToString() == "ErasingStrikeMutator")
@@ -377,25 +359,13 @@ namespace LastEpoch_Hud.Scripts.Mods.Skills
                             var ab = __1.TryCast<SummonBoneGolemMutator>();
                             if (!ab.IsNullOrDestroyed())
                             {
-                                if (Save_Manager.instance.data.Skills.Minions.BoneGolems.Enable_selfResurrectChance)
-                                {
-                                    //ab.selfResurrectChance = Save_Manager.instance.data.Skills.Minions.BoneGolems.selfResurrectChance;
-                                }
                                 if (Save_Manager.instance.data.Skills.Minions.BoneGolems.Enable_increasedFireAuraArea)
                                 {
                                     ab.increasedFireAuraArea = Save_Manager.instance.data.Skills.Minions.BoneGolems.increasedFireAuraArea;
                                 }
-                                if (Save_Manager.instance.data.Skills.Minions.BoneGolems.Enable_increasedMoveSpeed)
-                                {
-                                    //ab.increasedMoveSpeed = Save_Manager.instance.data.Skills.Minions.BoneGolems.increasedMoveSpeed;
-                                }
                                 if (Save_Manager.instance.data.Skills.Minions.BoneGolems.Enable_twins)
                                 {
                                     ab.twins = true;
-                                }
-                                if (Save_Manager.instance.data.Skills.Minions.BoneGolems.Enable_hasSlamAttack)
-                                {
-                                    //ab.hasSlamAttack = true;
                                 }
                                 if (Save_Manager.instance.data.Skills.Minions.BoneGolems.Enable_undeadArmorAura)
                                 {

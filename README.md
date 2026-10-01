@@ -1,52 +1,38 @@
-# LastEpoch Mods
+# Last Epoch HUD
 
-## How to : 
-+ Installation Instruction can be found in [Discord](https://discord.gg/Kxfq8B82xj)
+Updated build of [Ash's Last Epoch HUD](https://github.com/RCInet/LastEpoch_Mods) for the current game (Unity 6000.4.8) and MelonLoader 0.7.3 Open-Beta.
 
+In a zone, press **F3** to open and close the mod menu. Escape closes it.
 
-## Requirements :
-+ [Melon Loader](https://github.com/LavaGang/MelonLoader)
-  
-## Options :
-ItemDrop :
-- Gold Multiplier
-- Items multiplier
-- Experience Multiplier
-- Rarity
-- Implicits
-- Forgin Potencial
-- Affixes Values
-- Affixes Tiers
-- Unique Mods
-- Legendary Potencial
-- Weaver Will
-<br/><br/>
-Autoloot :
-- Gold
-- Keys
-- Unique & Set
-- Xp Tome
-- Materials
-- AutoStore Materials
-<br/><br/>
-Scene :
-- Density Multiplier
-- Experience Multiplier
-- Waypoint Unlock
-<br/><br/>
-Remove Prerequisites :
-- Remove Level
-- Remove Class
-- Remove subclass
-<br/><br/>
-Dungeons :
-- Objective Reveal
-- Enter Without Key
-<br/><br/>
-Monoliths :
-- Override max stability
-- Objective Reveal
-- Set ennemies defeat count on start
-- Complete Objective on start
-- No lost when die (untested)
-<br/><br/>
+## Install
+
+1. Install [MelonLoader 0.7.3 Open-Beta](https://github.com/LavaGang/MelonLoader/releases) on Last Epoch. Point the installer at the game folder.
+
+2. Start the game once, wait until the main menu, then close it. MelonLoader generates its files on that first launch.
+
+3. Download `LastEpoch_Hud.zip` from the [latest release](https://github.com/Syncingoutt/LastEpoch_Mods/releases). Copy its contents into the game `Mods` folder. You should have:
+
+   ```text
+   <Last Epoch>\Mods\LastEpoch_Hud.dll
+   <Last Epoch>\Mods\LastEpoch_Hud\Assets\
+   <Last Epoch>\Mods\LastEpoch_Hud\Locales\
+   <Last Epoch>\Mods\LastEpoch_Hud\hh_buffs.json
+   ```
+
+   The `Assets` folder is required. Without it the menu has no layout.
+
+4. If the mod is listed but never runs, or `MelonLoader\Latest.log` says `BadImageFormatException` or `No Support Module Loaded`, close the game. Download `UnityEngine.CoreModule.dll` from the same release and replace:
+
+   ```text
+   <Last Epoch>\MelonLoader\Il2CppAssemblies\UnityEngine.CoreModule.dll
+   ```
+
+   That file is the only MelonLoader change. Do not replace the whole MelonLoader folder. It only matches this game version. After a game update, delete `MelonLoader\Il2CppAssemblies` and let MelonLoader generate it again.
+
+## Build
+
+The project references assemblies from your Last Epoch install. If the game is not in the default Steam folder:
+
+```powershell
+dotnet build .\LastEpoch_Hud\LastEpoch_Hud.csproj -c Release -p:LastEpochPath="D:\SteamLibrary\steamapps\common\Last Epoch"
+```
