@@ -19,7 +19,7 @@ In a zone, press **F3** to open and close the mod menu. Escape closes it.
 
    The DLL stays next to the `LastEpoch_Hud` folder, not inside it.
 
-4. If the mod is listed but never runs, or `MelonLoader\Latest.log` says `BadImageFormatException` or `No Support Module Loaded`, close the game. Download `UnityEngine.CoreModule.dll` from the same release and replace:
+4. Download `UnityEngine.CoreModule.dll` from the same release and replace:
 
    ```text
    <Last Epoch>\MelonLoader\Il2CppAssemblies\UnityEngine.CoreModule.dll
