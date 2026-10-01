@@ -52,6 +52,8 @@ namespace LastEpoch_Hud.Scripts
         public static AbilityManager ability_manager = null;
         public static FactionTracker faction_tracker = null;
         float nextHeavyProbe = 0f;
+        string probedScene = "";
+        int probesLeft = 0;
 
         void Awake()
         {
@@ -93,8 +95,20 @@ namespace LastEpoch_Hud.Scripts
 
         void Tick()
         {
-            bool heavy = UnityEngine.Time.unscaledTime >= nextHeavyProbe;
-            if (heavy) { nextHeavyProbe = UnityEngine.Time.unscaledTime + 1f; }
+            // FindObjectOfType and the list getters hitch the game. Probe a few times after a
+            // scene change, then stop. Repeating the search every second is what stuttered combat.
+            if (probedScene != Scenes.SceneName)
+            {
+                probedScene = Scenes.SceneName;
+                probesLeft = Scenes.IsGameScene() ? 3 : 1;
+                nextHeavyProbe = UnityEngine.Time.unscaledTime + 1f;
+            }
+            bool heavy = probesLeft > 0 && UnityEngine.Time.unscaledTime >= nextHeavyProbe;
+            if (heavy)
+            {
+                probesLeft--;
+                nextHeavyProbe = UnityEngine.Time.unscaledTime + 3f;
+            }
 
             if ((game_uibase.IsNullOrDestroyed()) && (!UIBase.instance.IsNullOrDestroyed())) { game_uibase = UIBase.instance; }
             if ((epoch_input_manager.IsNullOrDestroyed()) && (!EpochInputManager.instance.IsNullOrDestroyed())) { epoch_input_manager = EpochInputManager.instance; }

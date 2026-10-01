@@ -16,6 +16,7 @@ namespace LastEpoch_Hud.Scripts
         public Data.Mods_Structure data = new Data.Mods_Structure();
         public Data.Mods_Structure data_duplicate = new Data.Mods_Structure();
         public bool initialized = false;
+        bool menuWasOpen = false;
 
         void Awake()
         {
@@ -27,7 +28,12 @@ namespace LastEpoch_Hud.Scripts
         }
         void Update()
         {
-            if (initialized) { Check_DataChanged(); }
+            if (!initialized) { return; }
+            // Equals walks the whole config with reflection. Doing that every frame hitches the game.
+            // Settings only change from the mod menu, so compare while it is open and once as it closes.
+            bool menuOpen = Hud_Manager.mod_menu_open;
+            if (menuOpen || menuWasOpen) { Check_DataChanged(); }
+            menuWasOpen = menuOpen;
         }
         
         void Load()
