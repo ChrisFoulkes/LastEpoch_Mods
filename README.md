@@ -14,12 +14,8 @@ In a zone, press **F3** to open and close the mod menu. Escape closes it.
 
    ```text
    <Last Epoch>\Mods\LastEpoch_Hud.dll
-   <Last Epoch>\Mods\LastEpoch_Hud\Assets\
-   <Last Epoch>\Mods\LastEpoch_Hud\Locales\
-   <Last Epoch>\Mods\LastEpoch_Hud\hh_buffs.json
+   <Last Epoch>\Mods\LastEpoch_Hud
    ```
-
-   The `Assets` folder is required. Without it the menu has no layout.
 
 4. If the mod is listed but never runs, or `MelonLoader\Latest.log` says `BadImageFormatException` or `No Support Module Loaded`, close the game. Download `UnityEngine.CoreModule.dll` from the same release and replace:
 
