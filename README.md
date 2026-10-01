@@ -25,7 +25,7 @@ In a zone, press **F3** to open and close the mod menu. Escape closes it.
    <Last Epoch>\MelonLoader\Il2CppAssemblies\UnityEngine.CoreModule.dll
    ```
 
-   That file is the only MelonLoader change. Do not replace the whole MelonLoader folder. It only matches this game version. After a game update, delete `MelonLoader\Il2CppAssemblies` and let MelonLoader generate it again.
+   That file is the only MelonLoader change. Do not replace the whole MelonLoader folder. It only matches this game version.
 
 ## Build
 
