@@ -168,6 +168,10 @@ namespace LastEpoch_Hud
         }
         public static GameObject GetChild(GameObject obj, string name)
         {
+            return GetChild(obj, name, true);
+        }
+        public static GameObject GetChild(GameObject obj, string name, bool log)
+        {
             GameObject result = null;
             if (!obj.IsNullOrDestroyed())
             {
@@ -183,9 +187,9 @@ namespace LastEpoch_Hud
                     }
                 }
                 string[] no_bug = { "skin", "Modifier Button", "legendary_icon", "quad_stash_row" };
-                if ((!found) && (!no_bug.Contains(name))) { Main.logger_instance?.Error("Functions.GetChild, Child : " + name + " not Found"); }
+                if (log && (!found) && (!no_bug.Contains(name))) { Main.logger_instance?.Error("Functions.GetChild, Child : " + name + " not Found"); }
             }
-            else { Main.logger_instance.Error("GetChild(" + name + ") : Obj is null"); }
+            else if (log) { Main.logger_instance.Error("GetChild(" + name + ") : Obj is null"); }
 
             return result;
         }
@@ -214,25 +218,74 @@ namespace LastEpoch_Hud
         }
         public static GameObject GetViewportContent(GameObject obj, string panel_name, string panel_content_name)
         {
-            GameObject result = null;
-            GameObject panel = GetChild(obj, panel_name);
-            if (!panel.IsNullOrDestroyed())
+            GameObject panel = GetChild(obj, panel_name, false);
+            if (panel.IsNullOrDestroyed()) { panel = FindDescendant(obj, panel_name); }
+            if (panel.IsNullOrDestroyed())
             {
-                GameObject content = GetChild(panel, panel_content_name);
-                if (!content.IsNullOrDestroyed())
-                {
-                    GameObject viewport = GetChild(content, "Viewport");
-                    if (!viewport.IsNullOrDestroyed()) { result = GetChild(viewport, "Content"); }
-                }
+                Main.logger_instance?.Error("Functions.GetChild, Child : " + panel_name + " not Found");
+                return null;
             }
 
-            return result;
+            // The live menu wraps these lists in an extra Content object, and Center has
+            // more than one child named Content. Use the one that actually owns a Viewport.
+            GameObject content = FindChildWithViewport(panel, panel_content_name);
+            if (content.IsNullOrDestroyed())
+            {
+                Main.logger_instance?.Error("Functions.GetChild, Child : " + panel_content_name + " not Found");
+                return null;
+            }
+
+            GameObject viewport = GetChild(content, "Viewport", false);
+            if (viewport.IsNullOrDestroyed())
+            {
+                Main.logger_instance?.Error("Functions.GetChild, Child : Viewport not Found");
+                return null;
+            }
+
+            return GetChild(viewport, "Content", false);
+        }
+        static GameObject FindChildWithViewport(GameObject obj, string name)
+        {
+            if (obj.IsNullOrDestroyed()) { return null; }
+            for (int i = 0; i < obj.transform.childCount; i++)
+            {
+                GameObject child = obj.transform.GetChild(i).gameObject;
+                if (child.name == name && !GetChild(child, "Viewport", false).IsNullOrDestroyed())
+                {
+                    return child;
+                }
+
+                GameObject nested = FindChildWithViewport(child, name);
+                if (!nested.IsNullOrDestroyed()) { return nested; }
+            }
+
+            return null;
+        }
+        public static GameObject Get_Along(GameObject root, params string[] path)
+        {
+            GameObject current = root;
+            for (int i = 0; i < path.Length; i++)
+            {
+                if (current.IsNullOrDestroyed()) { return null; }
+                current = GetChild(current, path[i], false);
+            }
+            return current;
+        }
+        public static Text Get_TextAlong(GameObject root, params string[] path)
+        {
+            GameObject obj = Get_Along(root, path);
+            if (obj.IsNullOrDestroyed()) { return null; }
+            return obj.GetComponent<Text>();
         }
         public static Toggle Get_ToggleInPanel(GameObject obj, string panel_name, string obj_name)
         {
             Toggle result = null; // new Toggle();
             GameObject panel = GetChild(obj, panel_name);
-            if (!panel.IsNullOrDestroyed()) { result = Functions.GetChild(panel, obj_name).GetComponent<Toggle>(); }
+            if (!panel.IsNullOrDestroyed())
+            {
+                GameObject child = GetChild(panel, obj_name, false);
+                if (!child.IsNullOrDestroyed()) { result = child.GetComponent<Toggle>(); }
+            }
 
             return result;
         }
@@ -240,7 +293,11 @@ namespace LastEpoch_Hud
         {
             Text result = null;// new Text();
             GameObject panel = GetChild(obj, panel_name);
-            if (!panel.IsNullOrDestroyed()) { result = Functions.GetChild(panel, obj_name).GetComponent<Text>(); }
+            if (!panel.IsNullOrDestroyed())
+            {
+                GameObject child = GetChild(panel, obj_name, false);
+                if (!child.IsNullOrDestroyed()) { result = child.GetComponent<Text>(); }
+            }
 
             return result;
         }
@@ -248,7 +305,11 @@ namespace LastEpoch_Hud
         {
             Slider result = null; // new Slider();
             GameObject panel = GetChild(obj, panel_name);
-            if (!panel.IsNullOrDestroyed()) { result = Functions.GetChild(panel, obj_name).GetComponent<Slider>(); }
+            if (!panel.IsNullOrDestroyed())
+            {
+                GameObject child = GetChild(panel, obj_name, false);
+                if (!child.IsNullOrDestroyed()) { result = child.GetComponent<Slider>(); }
+            }
 
             return result;
         }
@@ -269,7 +330,8 @@ namespace LastEpoch_Hud
                 GameObject toogle = GetChild(panel, toggle_name);
                 if (!toogle.IsNullOrDestroyed())
                 {
-                    result = GetChild(toogle, obj_name).GetComponent<Text>();
+                    GameObject child = GetChild(toogle, obj_name, false);
+                    if (!child.IsNullOrDestroyed()) { result = child.GetComponent<Text>(); }
                 }
             }
 
@@ -281,7 +343,8 @@ namespace LastEpoch_Hud
             GameObject button = GetChild(obj, button_name);
             if (!button.IsNullOrDestroyed())
             {
-                result = GetChild(button, text_name).GetComponent<Text>();
+                GameObject child = GetChild(button, text_name, false);
+                if (!child.IsNullOrDestroyed()) { result = child.GetComponent<Text>(); }
             }
 
             return result;
