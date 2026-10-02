@@ -5142,7 +5142,8 @@ namespace LastEpoch_Hud.Scripts
                 public static GameObject shard_filters = null;
                 public static Dropdown shards_filter_type = null;
                 public static Dropdown shards_filter_class = null;
-                public static InputField shards_filter_name = null;
+                public static InputField shards_filter_name;
+                public static Il2CppTMPro.TMP_InputField shards_filter_name_tmp;
                 public static Button shards_filters_button = null;
                 public static readonly System.Action Resfresh_OnClick_Action = new System.Action(InitializeShardsView);
 
@@ -5345,7 +5346,11 @@ namespace LastEpoch_Hud.Scripts
                                         if (!name.IsNullOrDestroyed())
                                         {
                                             GameObject g = Functions.GetChild(name, "InputField");
-                                            if (!g.IsNullOrDestroyed()) { shards_filter_name = g.GetComponent<InputField>(); }
+                                            if (!g.IsNullOrDestroyed()) 
+                                            { 
+                                                shards_filter_name = g.GetComponent<InputField>(); 
+                                                shards_filter_name_tmp = g.GetComponent<Il2CppTMPro.TMP_InputField>();
+                                            }
                                             else { error = true; Main.logger_instance.Error("g_name not found"); }
                                         }
                                         else { error = true; Main.logger_instance.Error("name not found"); }
@@ -5354,7 +5359,18 @@ namespace LastEpoch_Hud.Scripts
                                         if (!refresh.IsNullOrDestroyed())
                                         {
                                             GameObject g = Functions.GetChild(refresh, "Button");
-                                            if (!g.IsNullOrDestroyed()) { shards_filters_button = g.GetComponent<Button>(); }
+                                            if (!g.IsNullOrDestroyed()) 
+                                            { 
+                                                shards_filters_button = g.GetComponent<Button>(); 
+                                                if (!shards_filters_button.IsNullOrDestroyed())
+                                                {
+                                                    shards_filters_button.onClick.RemoveAllListeners();
+                                                    shards_filters_button.onClick.AddListener((UnityEngine.Events.UnityAction)(() =>
+                                                    {
+                                                        InitializeShardsView();
+                                                    }));
+                                                }
+                                            }
                                             else { error = true; Main.logger_instance.Error("g_refresh not found"); }
                                         }
                                         else { error = true; Main.logger_instance.Error("refresh not found"); }
@@ -5969,26 +5985,48 @@ namespace LastEpoch_Hud.Scripts
                     weaver_will_Text.text = System.Convert.ToInt32(weaver_will_slider.value).ToString();
                 }
 
-                public static void SetShardsView(int affix_number, bool seal)
+public static void SetShardsView(int affix_number, bool seal)
                 {
                     shard_seal = seal;
                     shard_number = affix_number;
-                    if (!shard_initialized) { InitializeShardsView(); }                    
+                    if (!shard_initialized) { InitializeShardsView(); }
                 }
+
                 public static void InitializeShardsView()
                 {
+                    if (center_content.IsNullOrDestroyed())
+                    {
+                        Main.logger_instance.Error("[OdlForceDrop] InitializeShardsView aborted: center_content is null or destroyed.");
+                        return;
+                    }
+
+                    if (shard_prefab.IsNullOrDestroyed())
+                    {
+                        Main.logger_instance.Error("[OdlForceDrop] InitializeShardsView aborted: shard_prefab is null or destroyed.");
+                        return;
+                    }
+
+                    AffixList affixList = AffixList.get();
+                    if (affixList.IsNullOrDestroyed())
+                    {
+                        Main.logger_instance.Error("[OdlForceDrop] InitializeShardsView aborted: AffixList.get() returned null.");
+                        return;
+                    }
+
                     RemoveShardsInView();
-                    bool filter_by_type = false;                    
+
+                    bool filter_by_type = false;
                     AffixList.AffixType wanted_type = AffixList.AffixType.PREFIX;
-                    if (shards_filter_type.value > 0)
+                    if (!shards_filter_type.IsNullOrDestroyed() && shards_filter_type.value > 0)
                     {
                         filter_by_type = true;
                         if (shards_filter_type.value == 1) { wanted_type = AffixList.AffixType.PREFIX; }
                         else if (shards_filter_type.value == 2) { wanted_type = AffixList.AffixType.SUFFIX; }
                     }
+
                     bool filter_by_class = false;
                     AffixList.ClassSpecificity wanted_class = AffixList.ClassSpecificity.None;
-                    if (shards_filter_class.value > 0)
+                    if (!shards_filter_class.IsNullOrDestroyed() && shards_filter_class.value > 0)
                     {
                         filter_by_class = true;
                         if (shards_filter_class.value == 1) { wanted_class = AffixList.ClassSpecificity.NonSpecific; }
@@ -5996,68 +6034,132 @@ namespace LastEpoch_Hud.Scripts
                         else if (shards_filter_class.value == 3) { wanted_class = AffixList.ClassSpecificity.Mage; }
                         else if (shards_filter_class.value == 4) { wanted_class = AffixList.ClassSpecificity.Sentinel; }
                         else if (shards_filter_class.value == 5) { wanted_class = AffixList.ClassSpecificity.Acolyte; }
-                        else if (shards_filter_class.value == 6) { wanted_class = AffixList.ClassSpecificity.Rogue; }                        
+                        else if (shards_filter_class.value == 6) { wanted_class = AffixList.ClassSpecificity.Rogue; }
                     }
+
                     bool filter_by_name = false;
                     string wanted_name = "";
-                    if (shards_filter_name.text != "")
+                    if (!shards_filter_name.IsNullOrDestroyed() && !string.IsNullOrEmpty(shards_filter_name.text))
                     {
                         filter_by_name = true;
                         wanted_name = shards_filter_name.text;
                     }
-                    bool item_idol = false;
-                    if ((item_type > 24) && (item_type < 34)) { item_idol = true; }
-                    foreach (AffixList.SingleAffix affix in AffixList.get().singleAffixes)
+                    else if (!shards_filter_name_tmp.IsNullOrDestroyed() && !string.IsNullOrEmpty(shards_filter_name_tmp.text))
                     {
-                        bool affix_idol = false;
-                        if (affix.affixName.Contains("Idol ")) { affix_idol = true; }
+                        filter_by_name = true;
+                        wanted_name = shards_filter_name_tmp.text;
+                    }
 
-                        if (((item_idol && affix_idol) || (!item_idol && !affix_idol)) &&
-                            (((filter_by_name) && (affix.affixName.ToLower().Contains(wanted_name.ToLower()))) || (!filter_by_name)) &&
-                            (((filter_by_type) && (affix.type == wanted_type)) || (!filter_by_type)) &&
-                            (((filter_by_class) && (affix.classSpecificity == wanted_class)) || (!filter_by_class))
-                            )
+                    bool item_idol = (item_type > 24 && item_type < 34);
+
+                    if (affixList.singleAffixes != null)
+                    {
+                        foreach (AffixList.SingleAffix affix in affixList.singleAffixes)
                         {
-                            AddShardInView(affix.affixId, affix.affixName);
+                            if (affix.IsNullOrDestroyed()) continue;
+
+                            bool affix_idol = affix.affixName != null && affix.affixName.Contains("Idol ");
+
+                            if (((item_idol && affix_idol) || (!item_idol && !affix_idol)) &&
+                                (!filter_by_name || (affix.affixName != null && affix.affixName.ToLower().Contains(wanted_name.ToLower()))) &&
+                                (!filter_by_type || (affix.type == wanted_type)) &&
+                                (!filter_by_class || (affix.classSpecificity == wanted_class)))
+                            {
+                                AddShardInView(affix.affixId, affix.affixName);
+                            }
                         }
                     }
-                    foreach (AffixList.MultiAffix affix in AffixList.get().multiAffixes)
-                    {
-                        bool affix_idol = false;
-                        if (affix.affixName.Contains("Idol ")) { affix_idol = true; }
 
-                        if (((item_idol && affix_idol) || (!item_idol && !affix_idol)) &&
-                            (((filter_by_name) && (affix.affixName.ToLower().Contains(wanted_name.ToLower()))) || (!filter_by_name)) &&
-                            (((filter_by_type) && (affix.type == wanted_type)) || (!filter_by_type)) &&
-                            (((filter_by_class) && (affix.classSpecificity == wanted_class)) || (!filter_by_class))
-                            )
+                    if (affixList.multiAffixes != null)
+                    {
+                        foreach (AffixList.MultiAffix affix in affixList.multiAffixes)
                         {
-                            AddShardInView(affix.affixId, affix.affixName);
+                            if (affix.IsNullOrDestroyed()) continue;
+
+                            bool affix_idol = affix.affixName != null && affix.affixName.Contains("Idol ");
+
+                            if (((item_idol && affix_idol) || (!item_idol && !affix_idol)) &&
+                                (!filter_by_name || (affix.affixName != null && affix.affixName.ToLower().Contains(wanted_name.ToLower()))) &&
+                                (!filter_by_type || (affix.type == wanted_type)) &&
+                                (!filter_by_class || (affix.classSpecificity == wanted_class)))
+                            {
+                                AddShardInView(affix.affixId, affix.affixName);
+                            }
                         }
                     }
+
                     shard_initialized = true;
                 }
+
                 public static void RemoveShardsInView()
                 {
-                    foreach (GameObject go in Functions.GetAllChild(center_content))
+                    if (center_content.IsNullOrDestroyed()) return;
+
+                    var children = Functions.GetAllChild(center_content);
+                    if (children != null)
                     {
-                        Destroy(go);
+                        foreach (GameObject go in children)
+                        {
+                            if (!go.IsNullOrDestroyed())
+                            {
+                                Object.Destroy(go);
+                            }
+                        }
                     }
-                        
                 }
+
                 public static void AddShardInView(int id, string name)
                 {
+                    if (shard_prefab.IsNullOrDestroyed() || center_content.IsNullOrDestroyed()) return;
+
                     GameObject g = Object.Instantiate(shard_prefab, Vector3.zero, Quaternion.identity);
-                    g.transform.SetParent(center_content.transform);
+                    if (g.IsNullOrDestroyed()) return;
+
+                    g.transform.SetParent(center_content.transform, false);
+
+                    // 1. Hook up the button click event
                     GameObject shard_btn_object = Functions.GetChild(g, "shard_btn");
-                    Button shard_btn = shard_btn_object.GetComponent<Button>();
-                    shard_btn.name = shard_btn_name + id;
-                    GameObject shard_id_object = Functions.GetChild(shard_btn_object, "shard_id");
-                    Text shard_id = shard_id_object.GetComponent<Text>();
-                    shard_id.text = id.ToString();
-                    GameObject shard_name_object = Functions.GetChild(shard_btn_object, "shard_name");
-                    Text shard_name = shard_name_object.GetComponent<Text>();
-                    shard_name.text = name.ToString();
+                    if (!shard_btn_object.IsNullOrDestroyed())
+                    {
+                        Button shard_btn = shard_btn_object.GetComponent<Button>();
+                        if (!shard_btn.IsNullOrDestroyed())
+                        {
+                            shard_btn.name = shard_btn_name + id;
+                            shard_btn.onClick.RemoveAllListeners();
+                            shard_btn.onClick.AddListener((UnityEngine.Events.UnityAction)(() =>
+                            {
+                                SelectShard(id, name);
+                            }));
+                        }
+
+                        // 2. Set all Text components under shard_id (including the child 'Text' object)
+                        GameObject shard_id_object = Functions.GetChild(shard_btn_object, "shard_id");
+                        if (!shard_id_object.IsNullOrDestroyed())
+                        {
+                            var idTexts = shard_id_object.GetComponentsInChildren<Text>(true);
+                            if (idTexts != null)
+                            {
+                                foreach (var t in idTexts)
+                                {
+                                    if (!t.IsNullOrDestroyed()) { t.text = id.ToString(); }
+                                }
+                            }
+                        }
+
+                        // 3. Set all Text components under shard_name (including the child 'Text' object)
+                        GameObject shard_name_object = Functions.GetChild(shard_btn_object, "shard_name");
+                        if (!shard_name_object.IsNullOrDestroyed())
+                        {
+                            var nameTexts = shard_name_object.GetComponentsInChildren<Text>(true);
+                            if (nameTexts != null)
+                            {
+                                foreach (var t in nameTexts)
+                                {
+                                    if (!t.IsNullOrDestroyed()) { t.text = name ?? ""; }
+                                }
+                            }
+                        }
+                    }
                 }
                 public static void SelectShard(int id, string name)
                 {
