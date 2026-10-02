@@ -17,38 +17,66 @@ namespace LastEpoch_Hud.Scripts.Mods.Skills
             }
             else { return false; }
         }
-        
-        [HarmonyPatch(typeof(SkillsPanelManager), "openSkillTree")]
-        public class SkillsPanelManager_openSkillTree
+
+        public static byte ChosenLevel()
         {
-            [HarmonyPrefix]
-            static void Prefix(ref SkillsPanelManager __instance, Ability __0)
+            int level = (int)Save_Manager.instance.data.Skills.SkillLevel;
+            if (level < 0) { level = 0; }
+            if (level > byte.MaxValue) { level = byte.MaxValue; }
+            return (byte)level;
+        }
+
+        static bool writing;
+
+        static void Apply(LocalTreeData tree, Ability ability)
+        {
+            if (writing || !CanRun() || tree == null || ability.IsNullOrDestroyed() || tree.specialisedSkillTrees.IsNullOrDestroyed()) { return; }
+            byte level = ChosenLevel();
+            foreach (LocalTreeData.SkillTreeData data in tree.specialisedSkillTrees)
+            {
+                if (data == null || data.ability.IsNullOrDestroyed()) { continue; }
+                if (data.ability.abilityName != ability.abilityName) { continue; }
+                writing = true;
+                data.level = level;
+                writing = false;
+                return;
+            }
+        }
+
+        [HarmonyPatch(typeof(SkillsPanelManager), "OnOpenSkillTree")]
+        public class SkillsPanelManager_OnOpenSkillTree
+        {
+            [HarmonyPostfix]
+            static void Postfix(SkillsPanelManager __instance, SkillTree __0)
             {
                 try
                 {
-                    if (!__instance.IsNullOrDestroyed())
-                    {
-                        if ((CanRun()) && (!__0.IsNullOrDestroyed()))
-                        {
-                            if (!Refs_Manager.player_treedata.specialisedSkillTrees.IsNullOrDestroyed())
-                            {
-                                foreach (LocalTreeData.SkillTreeData skill_tree_data in Refs_Manager.player_treedata.specialisedSkillTrees)
-                                {
-                                    if (!skill_tree_data.ability.IsNullOrDestroyed())
-                                    {
-                                        if (skill_tree_data.ability.abilityName == __0.abilityName)
-                                        {
-                                            skill_tree_data.level = (byte)Save_Manager.instance.data.Skills.SkillLevel;
-                                            __instance.updateVisuals(false);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    if (__0.IsNullOrDestroyed()) { return; }
+                    Apply(Refs_Manager.player_treedata, __0.ability);
+                    if (!__instance.IsNullOrDestroyed()) { __instance.updateVisuals(false); }
                 }
-                catch { Main.logger_instance?.Msg("SkillsPanelManager.openSkillTree() ERROR"); }
+                catch { Main.logger_instance?.Msg("SkillsPanelManager.OnOpenSkillTree() ERROR"); }
+            }
+        }
+
+        [HarmonyPatch(typeof(LocalTreeData), "getAbilityLevel")]
+        public class LocalTreeData_getAbilityLevel
+        {
+            [HarmonyPostfix]
+            static void Postfix(LocalTreeData __instance, Ability __0, ref byte __result)
+            {
+                if (writing || !CanRun() || __0.IsNullOrDestroyed() || __instance.specialisedSkillTrees.IsNullOrDestroyed()) { return; }
+                byte level = ChosenLevel();
+                foreach (LocalTreeData.SkillTreeData data in __instance.specialisedSkillTrees)
+                {
+                    if (data == null || data.ability.IsNullOrDestroyed()) { continue; }
+                    if (data.ability.abilityName != __0.abilityName) { continue; }
+                    writing = true;
+                    data.level = level;
+                    writing = false;
+                    __result = level;
+                    return;
+                }
             }
         }
     }
