@@ -6577,9 +6577,16 @@ public static void SetShardsView(int affix_number, bool seal)
                                     }
                                 }
                             }
-                            item.RefreshIDAndValues(); //Refresh item for implicits and unique mods
+                            if (!corrupted_toggle.IsNullOrDestroyed() && corrupted_toggle.isOn)
+                            {
+                                // The character save stores the packed item id, not the live flag.
+                                // Mark it before the refresh so that id includes the corruption bit.
+                                item.corrupted = true;
+                                item.CorruptWithoutEffect();
+                                item.SetAsCorrupted();
+                            }
+                            item.RefreshIDAndValues(); //Refresh item for implicits, unique mods, and the saved id
                             if ((item_type < 100) && (ra < 7)) { item.forgingPotential = fg; }
-                            if (!corrupted_toggle.IsNullOrDestroyed() && corrupted_toggle.isOn) { item.SetAsCorrupted(); }
                             
                             Refs_Manager.ground_item_manager.dropItemForPlayer(Refs_Manager.player_actor, item.TryCast<ItemData>(), Refs_Manager.player_actor.position(), false);
                         }
