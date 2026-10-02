@@ -804,16 +804,35 @@ namespace LastEpoch_Hud.Scripts
                 }
             }
 
+            [HarmonyPatch(typeof(Slider), "Set", new System.Type[] { typeof(float), typeof(bool) })]
+            public class Slider_Set
+            {
+                [HarmonyPostfix]
+                static void Postfix(Slider __instance, bool sendCallback)
+                {
+                    if (!sendCallback || Content.Character.Data.suppressWeaverSlider) { return; }
+                    if (__instance.IsNullOrDestroyed() || __instance.name != "Slider_Weaver_TreePoints") { return; }
+                    if (hud_object.IsNullOrDestroyed() || !hud_object.active || Save_Manager.instance.IsNullOrDestroyed()) { return; }
+                    Content.Character.Data.SetWeaverTreePoints(__instance.value);
+                }
+            }
+
             [HarmonyPatch(typeof(Slider), "set_value")]
             public class Slider_set_value
             {
                 [HarmonyPostfix]
                 static void Postfix(ref Slider __instance, float __0)
                 {
+                    if (Content.Character.Data.suppressWeaverSlider) { return; }
                     if (!(hud_object.IsNullOrDestroyed()) && (!Save_Manager.instance.IsNullOrDestroyed()))
                     {
                         if ((hud_object.active) && (!Refs_Manager.player_data.IsNullOrDestroyed()))
                         {
+                            if (__instance.name == "Slider_Weaver_TreePoints")
+                            {
+                                Content.Character.Data.SetWeaverTreePoints(__instance.value);
+                                return;
+                            }
                             if (__instance.name.Contains("Slider_Character_"))
                             {
                                 switch (__instance.name)
@@ -1620,6 +1639,24 @@ namespace LastEpoch_Hud.Scripts
                                 Data.soul_text = Functions.Get_TextInButton(character_data_content, "Soul Embers", "Value");
                                 Data.soul_slider = Functions.Get_SliderInPanel(character_data_content, "Soul Embers", "Slider_Character_Data_SoulEmbers");
 
+                                Data.weaver_points_toggle = Functions.Get_ToggleInPanel(character_data_content, "TreePoints", "Toggle_Weaver_TreePoints");
+                                Data.weaver_points_text = Functions.Get_TextInToggle(character_data_content, "TreePoints", "Toggle_Weaver_TreePoints", "Value");
+                                Data.weaver_points_slider = Functions.Get_SliderInPanel(character_data_content, "TreePoints", "Slider_Weaver_TreePoints");
+                                if (!Data.weaver_points_slider.IsNullOrDestroyed())
+                                {
+                                    Data.weaver_points_slider.interactable = true;
+                                    Data.EnsureWeaverRange();
+                                }
+                                if (!Save_Manager.instance.IsNullOrDestroyed())
+                                {
+                                    var woven = Save_Manager.instance.data.Factions.TheWoven;
+                                    Data.suppressWeaverSlider = true;
+                                    if (!Data.weaver_points_toggle.IsNullOrDestroyed()) { Data.weaver_points_toggle.isOn = woven.Enable_TreePoints; }
+                                    if (!Data.weaver_points_slider.IsNullOrDestroyed()) { Data.weaver_points_slider.value = woven.TreePoints; }
+                                    if (!Data.weaver_points_text.IsNullOrDestroyed()) { Data.weaver_points_text.text = woven.TreePoints.ToString(); }
+                                    Data.suppressWeaverSlider = false;
+                                }
+
                                 Data.monolith_stability_basic_go = Functions.GetChild(character_data_content, "Monolith_Stability_Basic");
                                 Data.monolith_stability_basic_go.active = false;
                                 Data.monolith_stability_basic_text = Functions.Get_TextInButton(character_data_content, "Monolith_Stability_Basic", "Value");
@@ -1873,6 +1910,10 @@ namespace LastEpoch_Hud.Scripts
                     if (!Data.monolith_gaze_slider.IsNullOrDestroyed())
                     {
                         Events.Set_Slider_Event(Data.monolith_gaze_slider, Data.monolith_gaze_slider_Action);
+                    }
+                    if (!Data.weaver_points_toggle.IsNullOrDestroyed())
+                    {
+                        Events.Set_Toggle_Event(Data.weaver_points_toggle, Data.weaver_points_toggle_Action);
                     }
                     
                     if (!Data.save_button.IsNullOrDestroyed())
@@ -2679,6 +2720,53 @@ namespace LastEpoch_Hud.Scripts
                     public static Slider lantern_slider = null;
                     public static Text soul_text = null;
                     public static Slider soul_slider = null;
+                    public static Toggle weaver_points_toggle = null;
+                    public static Text weaver_points_text = null;
+                    public static Slider weaver_points_slider = null;
+                    public static bool suppressWeaverSlider = false;
+                    public static readonly System.Action<bool> weaver_points_toggle_Action = new System.Action<bool>(SetWeaverTreePointsEnabled);
+                    public static void EnsureWeaverRange()
+                    {
+                        if (suppressWeaverSlider || weaver_points_slider.IsNullOrDestroyed()) { return; }
+                        int max = Mods.Factions.TheWoven.Faction_Woven_TreePoints.SliderMax;
+                        if (weaver_points_slider.wholeNumbers && weaver_points_slider.minValue == 0f && (int)weaver_points_slider.maxValue == max) { return; }
+                        suppressWeaverSlider = true;
+                        weaver_points_slider.wholeNumbers = true;
+                        weaver_points_slider.minValue = 0f;
+                        weaver_points_slider.maxValue = max;
+                        suppressWeaverSlider = false;
+                    }
+                    public static void SetWeaverTreePointsEnabled(bool on)
+                    {
+                        if (suppressWeaverSlider || Save_Manager.instance.IsNullOrDestroyed()) { return; }
+                        Save_Manager.instance.data.Factions.TheWoven.Enable_TreePoints = on;
+                        EnsureWeaverRange();
+                        if (on && !weaver_points_slider.IsNullOrDestroyed())
+                        {
+                            Save_Manager.instance.data.Factions.TheWoven.TreePoints = (int)weaver_points_slider.value;
+                        }
+                        if (!weaver_points_text.IsNullOrDestroyed() && !weaver_points_slider.IsNullOrDestroyed())
+                        {
+                            weaver_points_text.text = ((int)weaver_points_slider.value).ToString();
+                        }
+                        Mods.Factions.TheWoven.Faction_Woven_TreePoints.ApplyToPlayer();
+                    }
+                    public static void SetWeaverTreePoints(float value)
+                    {
+                        if (suppressWeaverSlider || Save_Manager.instance.IsNullOrDestroyed()) { return; }
+                        EnsureWeaverRange();
+                        int points = (int)value;
+                        int max = Mods.Factions.TheWoven.Faction_Woven_TreePoints.SliderMax;
+                        if (points > max) { points = max; }
+                        Save_Manager.instance.data.Factions.TheWoven.TreePoints = points;
+                        Save_Manager.instance.data.Factions.TheWoven.Enable_TreePoints = true;
+                        if (!weaver_points_toggle.IsNullOrDestroyed() && !weaver_points_toggle.isOn)
+                        {
+                            weaver_points_toggle.isOn = true;
+                        }
+                        if (!weaver_points_text.IsNullOrDestroyed()) { weaver_points_text.text = points.ToString(); }
+                        Mods.Factions.TheWoven.Faction_Woven_TreePoints.ApplyToPlayer();
+                    }
 
                     public static Dropdown monolith_dropdown = null;
                     public static GameObject monolith_stability_basic_go = null;
