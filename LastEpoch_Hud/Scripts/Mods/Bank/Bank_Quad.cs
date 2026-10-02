@@ -24,6 +24,8 @@ namespace LastEpoch_Hud.Scripts.Mods.Bank
         public static Sprite quad_grid = null;
         public static Image quad_overlay = null;
         static int presented_tab = -999;
+        static bool quad_sprite_searched = false;
+        static bool grid_image_searched = false;
         public static UIPanel stash_panel = null;
         public static StashItemContainer stash_item_container = null;
         public static StashItemContainerUI stash_item_container_ui = null;
@@ -104,18 +106,14 @@ namespace LastEpoch_Hud.Scripts.Mods.Bank
                             stash_panel = StashPanelUI.Instance.GetComponentInParent<UIPanel>();
                         }
                     }
-                    if ((!stash_panel.IsNullOrDestroyed()) && (/*(stash_item_container_ui.IsNullOrDestroyed()) ||*/ (stash_grid_image.IsNullOrDestroyed()) || (default_grid.IsNullOrDestroyed())))
+                    if ((!stash_panel.IsNullOrDestroyed()) && (!grid_image_searched) && ((stash_grid_image.IsNullOrDestroyed()) || (default_grid.IsNullOrDestroyed())))
                     {
+                        grid_image_searched = true;
                         if (!stash_panel.instance.IsNullOrDestroyed())
                         {
                             GameObject left_obj = Functions.GetChild(stash_panel.instance, "left-container");
                             if (!left_obj.IsNullOrDestroyed())
                             {
-                                /*if (stash_item_container_ui.IsNullOrDestroyed())
-                                {
-                                    GameObject stash_obj = Functions.GetChild(left_obj, "Stash");
-                                    if (!stash_obj.IsNullOrDestroyed()) {  stash_item_container_ui = stash_obj.GetComponent<StashItemContainerUI>(); }
-                                }*/
                                 if (stash_grid_image.IsNullOrDestroyed())
                                 {
                                     GameObject grid_obj = Functions.GetChild(left_obj, "grid-img");
@@ -129,29 +127,18 @@ namespace LastEpoch_Hud.Scripts.Mods.Bank
                             }
                         }
                     }
-                    if ((!Hud_Manager.asset_bundle.IsNullOrDestroyed()) && (quad_grid.IsNullOrDestroyed()))
+                    if ((!quad_sprite_searched) && (quad_grid.IsNullOrDestroyed()) && (!Hud_Manager.asset_bundle.IsNullOrDestroyed()))
                     {
-                        foreach (string name in Hud_Manager.asset_bundle.GetAllAssetNames())
-                        {
-                            if (name.Contains("/quadstash/"))
-                            {
-                                if ((Functions.Check_Texture(name)) && (name.Contains("quad_grid")))
-                                {
-                                    Texture2D texture = Hud_Manager.asset_bundle.LoadAsset(name).TryCast<Texture2D>();
-                                    quad_grid = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), Vector2.zero);
-                                    Object.DontDestroyOnLoad(quad_grid);
-                                }
-                            }
-                        }
+                        quad_sprite_searched = true;
+                        EnsureQuadSprite();
                     }
 
                     //Update UI
                     if (!stash_item_container_ui.IsNullOrDestroyed() && !stash_item_container_ui.gameObject.activeInHierarchy) { presented_tab = -999; }
-                    if (!stash_item_container.IsNullOrDestroyed())
+                    if ((!stash_item_container.IsNullOrDestroyed()) && (!stash_item_container_ui.IsNullOrDestroyed()))
                     {
-                        if (stash_item_container_ui.IsNullOrDestroyed()) { stash_item_container_ui = UnityEngine.Object.FindObjectOfType<StashItemContainerUI>(); }
                         int tab = stash_item_container.CurrentlyActiveTab;
-                        if ((!stash_item_container_ui.IsNullOrDestroyed()) && (stash_item_container_ui.gameObject.activeInHierarchy) && (tab != presented_tab))
+                        if ((stash_item_container_ui.gameObject.activeInHierarchy) && (tab != presented_tab))
                         {
                             if (ApplyPresentation())
                             {
@@ -881,7 +868,12 @@ namespace LastEpoch_Hud.Scripts.Mods.Bank
                 [HarmonyPostfix]
                 static void Postfix(Il2CppLE.UI.PanelSystem.StashPanelV2 __instance)
                 {
-                    if (__instance.IsNullOrDestroyed() || !stash_grid_image.IsNullOrDestroyed()) { return; }
+                    if (__instance.IsNullOrDestroyed()) { return; }
+                    if (stash_item_container_ui.IsNullOrDestroyed())
+                    {
+                        stash_item_container_ui = __instance.GetComponentInChildren<StashItemContainerUI>(true);
+                    }
+                    if (!stash_grid_image.IsNullOrDestroyed()) { return; }
                     Image[] images = __instance.GetComponentsInChildren<Image>(true);
                     if (images == null) { return; }
                     foreach (Image image in images)
