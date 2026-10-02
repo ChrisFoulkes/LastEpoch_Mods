@@ -18,20 +18,32 @@ namespace LastEpoch_Hud.Scripts.Mods.Mobs
             else { return false; }
         }
 
-        //[HarmonyPatch(typeof(SpawnerPlacementManager), "Start")] //Patched by https://github.com/RolandSolymosi
-       // The Start of SpawnerPlacementManager still return access violation exception with ML 6+ interop dll 
-        [HarmonyPatch(typeof(SpawnerPlacementManager), "RollSpawners")]
-        public class SpawnerPlacementManager_RollSpawners
+        public static void Apply(SpawnerPlacementManager manager)
+        {
+            if ((!CanRun()) || (manager.IsNullOrDestroyed())) { return; }
+            manager.defaultSpawnerDensity = Save_Manager.instance.data.Character.Cheats.DensityMultiplier;
+            manager.alwaysRollSpawnerDensity = false;
+        }
+
+        [HarmonyPatch(typeof(SpawnerPlacementManager), "RollSpawners", new System.Type[] { })]
+        public class RollSpawners_NoArgs
         {
             [HarmonyPrefix]
-            public static void Prefix(ref SpawnerPlacementManager __instance)
-            {
-                if (CanRun())
-                {
-                    __instance.defaultSpawnerDensity = Save_Manager.instance.data.Character.Cheats.DensityMultiplier;
-                    __instance.alwaysRollSpawnerDensity = false;
-                }
-            }
+            static void Prefix(SpawnerPlacementManager __instance) { Apply(__instance); }
+        }
+
+        [HarmonyPatch(typeof(SpawnerPlacementManager), "RollSpawners", new System.Type[] { typeof(SpawnerPlacementRoom.SpawnerRuntimeConfig) })]
+        public class RollSpawners_Config
+        {
+            [HarmonyPrefix]
+            static void Prefix(SpawnerPlacementManager __instance) { Apply(__instance); }
+        }
+
+        [HarmonyPatch(typeof(SpawnerPlacementManager), "rollSpawnersNPerFrame")]
+        public class RollSpawners_PerFrame
+        {
+            [HarmonyPrefix]
+            static void Prefix(SpawnerPlacementManager __instance) { Apply(__instance); }
         }
     }
 }
