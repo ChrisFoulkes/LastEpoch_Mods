@@ -4987,6 +4987,7 @@ namespace LastEpoch_Hud.Scripts
                 public static readonly System.Action<float> affix_0_tier_Action = new System.Action<float>(SetAffix_0_Tier);
                 public static Text affix_0_value_text = null;
                 public static Slider affix_0_value_slider = null;
+                public static Toggle affix_0_random_toggle = null;
                 public static readonly System.Action<float> affix_0_value_Action = new System.Action<float>(SetAffix_0_Value);
 
                 public static bool affix_1_enable = false;
@@ -5001,6 +5002,7 @@ namespace LastEpoch_Hud.Scripts
                 public static readonly System.Action<float> affix_1_tier_Action = new System.Action<float>(SetAffix_1_Tier);
                 public static Text affix_1_value_text = null;
                 public static Slider affix_1_value_slider = null;
+                public static Toggle affix_1_random_toggle = null;
                 public static readonly System.Action<float> affix_1_value_Action = new System.Action<float>(SetAffix_1_Value);
 
                 public static bool affix_2_enable = false;
@@ -5015,6 +5017,7 @@ namespace LastEpoch_Hud.Scripts
                 public static readonly System.Action<float> affix_2_tier_Action = new System.Action<float>(SetAffix_2_Tier);
                 public static Text affix_2_value_text = null;
                 public static Slider affix_2_value_slider = null;
+                public static Toggle affix_2_random_toggle = null;
                 public static readonly System.Action<float> affix_2_value_Action = new System.Action<float>(SetAffix_2_Value);
 
                 public static bool affix_3_enable = false;
@@ -5029,6 +5032,7 @@ namespace LastEpoch_Hud.Scripts
                 public static readonly System.Action<float> affix_3_tier_Action = new System.Action<float>(SetAffix_3_Tier);
                 public static Text affix_3_value_text = null;
                 public static Slider affix_3_value_slider = null;
+                public static Toggle affix_3_random_toggle = null;
                 public static readonly System.Action<float> affix_3_value_Action = new System.Action<float>(SetAffix_3_Value);
 
                 public static bool affix_4_enable = false;
@@ -5043,6 +5047,7 @@ namespace LastEpoch_Hud.Scripts
                 public static readonly System.Action<float> affix_4_tier_Action = new System.Action<float>(SetAffix_4_Tier);
                 public static Text affix_4_value_text = null;
                 public static Slider affix_4_value_slider = null;
+                public static Toggle affix_4_random_toggle = null;
                 public static readonly System.Action<float> affix_4_value_Action = new System.Action<float>(SetAffix_4_Value);
 
                 public static bool affix_5_enable = false;
@@ -5057,6 +5062,8 @@ namespace LastEpoch_Hud.Scripts
                 public static readonly System.Action<float> affix_5_tier_Action = new System.Action<float>(SetAffix_5_Tier);
                 public static Text affix_5_value_text = null;
                 public static Slider affix_5_value_slider = null;
+                public static Toggle affix_5_random_toggle = null;
+                public static Toggle corrupted_toggle = null;
                 public static readonly System.Action<float> affix_5_value_Action = new System.Action<float>(SetAffix_5_Value);
 
                 //Unique mods
@@ -5161,6 +5168,78 @@ namespace LastEpoch_Hud.Scripts
                     if (text.IsNullOrDestroyed()) { text = Functions.Get_TextAlong(affix, oldName); }
                     return text;
                 }
+                static void PrepareRollSlider(Slider slider)
+                {
+                    if (slider.IsNullOrDestroyed()) { return; }
+                    slider.minValue = 0f;
+                    slider.maxValue = 255f;
+                    slider.interactable = true;
+                }
+                static void ApplyAffixRandom(Toggle randomToggle, Slider slider)
+                {
+                    if (slider.IsNullOrDestroyed()) { return; }
+                    slider.interactable = randomToggle.IsNullOrDestroyed() || !randomToggle.isOn;
+                }
+                static void ApplyAffixRandomToggles(bool _)
+                {
+                    ApplyAffixRandom(affix_0_random_toggle, affix_0_value_slider);
+                    ApplyAffixRandom(affix_1_random_toggle, affix_1_value_slider);
+                    ApplyAffixRandom(affix_2_random_toggle, affix_2_value_slider);
+                    ApplyAffixRandom(affix_3_random_toggle, affix_3_value_slider);
+                    ApplyAffixRandom(affix_4_random_toggle, affix_4_value_slider);
+                    ApplyAffixRandom(affix_5_random_toggle, affix_5_value_slider);
+                }
+                static readonly System.Action<bool> AffixRandomToggleAction = new System.Action<bool>(ApplyAffixRandomToggles);
+                static void BindRandomToggle(Toggle randomToggle, Slider slider)
+                {
+                    PrepareRollSlider(slider);
+                    ApplyAffixRandom(randomToggle, slider);
+                    if (randomToggle.IsNullOrDestroyed()) { return; }
+                    Events.Set_Toggle_Event(randomToggle, AffixRandomToggleAction);
+                }
+                static byte ChosenRoll(Toggle randomToggle, Slider slider)
+                {
+                    if (!randomToggle.IsNullOrDestroyed() && randomToggle.isOn)
+                    {
+                        return (byte)Random.RandomRange(0f, 255f);
+                    }
+                    if (slider.IsNullOrDestroyed()) { return 0; }
+                    return (byte)slider.value;
+                }
+                static string AffixLabel(AffixList.Affix affix)
+                {
+                    string label = affix.getAffixDisplayName();
+                    if (string.IsNullOrEmpty(label)) { label = affix.affixName; }
+                    return label ?? "";
+                }
+                static bool AffixFitsItem(AffixList.Affix affix)
+                {
+                    if (item_type < 0) { return affix.rollsOn != AffixList.RollsOn.Idols; }
+                    try
+                    {
+                        if (item_subtype > -1)
+                        {
+                            return affix.CanRollOn(item_type, item_subtype, ItemList.ClassRequirement.Any);
+                        }
+                        ItemList items = ItemList.get();
+                        if (items.IsNullOrDestroyed()) { return true; }
+                        return affix.CanRollOnAnySubType(items.GetEquipmentTypeForBaseType(item_type), ItemList.ClassRequirement.Any);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Main.logger_instance.Error("Affix filter error : " + ex.Message);
+                        return false;
+                    }
+                }
+                static void TryAddAffix(AffixList.Affix affix, bool filter_by_name, string wanted_name, bool filter_by_type, AffixList.AffixType wanted_type, bool filter_by_class, AffixList.ClassSpecificity wanted_class)
+                {
+                    if (affix.IsNullOrDestroyed() || !AffixFitsItem(affix)) { return; }
+                    string label = AffixLabel(affix);
+                    if (filter_by_name && !label.ToLower().Contains(wanted_name.ToLower())) { return; }
+                    if (filter_by_type && affix.type != wanted_type) { return; }
+                    if (filter_by_class && affix.classSpecificity != wanted_class) { return; }
+                    AddShardInView(affix.affixId, label);
+                }
                 public static void Get_Refs()
                 {
                     if (!Content.content_obj.IsNullOrDestroyed())
@@ -5204,6 +5283,7 @@ namespace LastEpoch_Hud.Scripts
                                 forgin_potencial_value = Functions.GetChild(left_base_content, "ForginPotencial");
                                 forgin_potencial_text = Functions.Get_TextInPanel(left_base_content, "ForginPotencial", "Value");
                                 forgin_potencial_slider = Functions.Get_SliderInPanel(left_base_content, "ForginPotencial", "Slider");
+                                PrepareRollSlider(forgin_potencial_slider);
 
                                 seal = Functions.GetChild(left_base_content, "EnableSeal");
                                 seal_border = Functions.GetChild(left_base_content, "SealBorder");
@@ -5237,6 +5317,7 @@ namespace LastEpoch_Hud.Scripts
                                 affix_0_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_0", "TierSlider");
                                 affix_0_value_text = AffixText(affix_0, "Roll", "Value");
                                 affix_0_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_0", "ValueSlider");
+                                affix_0_random_toggle = Functions.Get_ToggleInPanel(affix_0, "RandomRoll", "Toggle_Random");
                                 affix_1 = Functions.GetChild(left_base_content, "Affix_1");
                                 affix_1_button = Functions.Get_ButtonInPanel(affix_1, "Button");
                                 affix_1_select_text = Functions.Get_TextInButton(affix_1, "Button", "Text");
@@ -5244,6 +5325,7 @@ namespace LastEpoch_Hud.Scripts
                                 affix_1_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_1", "TierSlider");
                                 affix_1_value_text = AffixText(affix_1, "Roll", "Value");
                                 affix_1_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_1", "ValueSlider");
+                                affix_1_random_toggle = Functions.Get_ToggleInPanel(affix_1, "RandomRoll", "Toggle_Random");
                                 affix_2 = Functions.GetChild(left_base_content, "Affix_2");
                                 affix_2_button = Functions.Get_ButtonInPanel(affix_2, "Button");
                                 affix_2_select_text = Functions.Get_TextInButton(affix_2, "Button", "Text");
@@ -5251,6 +5333,7 @@ namespace LastEpoch_Hud.Scripts
                                 affix_2_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_2", "TierSlider");
                                 affix_2_value_text = AffixText(affix_2, "Roll", "Value");
                                 affix_2_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_2", "ValueSlider");
+                                affix_2_random_toggle = Functions.Get_ToggleInPanel(affix_2, "RandomRoll", "Toggle_Random");
                                 affix_3 = Functions.GetChild(left_base_content, "Affix_3");
                                 affix_3_button = Functions.Get_ButtonInPanel(affix_3, "Button");
                                 affix_3_select_text = Functions.Get_TextInButton(affix_3, "Button", "Text");
@@ -5258,6 +5341,7 @@ namespace LastEpoch_Hud.Scripts
                                 affix_3_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_3", "TierSlider");
                                 affix_3_value_text = AffixText(affix_3, "Roll", "Value");
                                 affix_3_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_3", "ValueSlider");
+                                affix_3_random_toggle = Functions.Get_ToggleInPanel(affix_3, "RandomRoll", "Toggle_Random");
                                 affix_4 = Functions.GetChild(left_base_content, "Affix_4");
                                 affix_4_button = Functions.Get_ButtonInPanel(affix_4, "Button");
                                 affix_4_select_text = Functions.Get_TextInButton(affix_4, "Button", "Text");
@@ -5265,6 +5349,7 @@ namespace LastEpoch_Hud.Scripts
                                 affix_4_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_4", "TierSlider");
                                 affix_4_value_text = AffixText(affix_4, "Roll", "Value");
                                 affix_4_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_4", "ValueSlider");
+                                affix_4_random_toggle = Functions.Get_ToggleInPanel(affix_4, "RandomRoll", "Toggle_Random");
                                 affix_5 = Functions.GetChild(left_base_content, "Affix_5");
                                 affix_5_button = Functions.Get_ButtonInPanel(affix_5, "Button");
                                 affix_5_select_text = Functions.Get_TextInButton(affix_5, "Button", "Text");
@@ -5272,6 +5357,9 @@ namespace LastEpoch_Hud.Scripts
                                 affix_5_tier_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_5", "TierSlider");
                                 affix_5_value_text = AffixText(affix_5, "Roll", "Value");
                                 affix_5_value_slider = Functions.Get_SliderInPanel(left_base_content, "Affix_5", "ValueSlider");
+                                affix_5_random_toggle = Functions.Get_ToggleInPanel(affix_5, "RandomRoll", "Toggle_Random");
+
+                                corrupted_toggle = Functions.Get_ToggleInPanel(left_base_content, "Corrupted", "Toggle");
 
                                 unique_mods = Functions.GetChild(left_base_content, "EnableUniqueMods");
                                 unique_mods_border = Functions.GetChild(left_base_content, "UniqueModsBorder");
@@ -5421,6 +5509,12 @@ namespace LastEpoch_Hud.Scripts
                         Events.Set_Slider_Event(implicit_1_slider, implicit_1_Action);
                         Events.Set_Slider_Event(implicit_2_slider, implicit_2_Action);
                         Events.Set_Slider_Event(forgin_potencial_slider, forgin_potencial_Action);
+                        BindRandomToggle(affix_0_random_toggle, affix_0_value_slider);
+                        BindRandomToggle(affix_1_random_toggle, affix_1_value_slider);
+                        BindRandomToggle(affix_2_random_toggle, affix_2_value_slider);
+                        BindRandomToggle(affix_3_random_toggle, affix_3_value_slider);
+                        BindRandomToggle(affix_4_random_toggle, affix_4_value_slider);
+                        BindRandomToggle(affix_5_random_toggle, affix_5_value_slider);
                         Events.Set_Button_Event(seal_select_btn, Seal_OnClick_Action);
                         Events.Set_Slider_Event(seal_tier_slider, seal_tier_Action);
                         Events.Set_Slider_Event(seal_value_slider, seal_value_Action);                                                
@@ -5549,6 +5643,7 @@ namespace LastEpoch_Hud.Scripts
                             UpdateRarity();
                             UpdateItems();
                             shard_initialized = false; //Reset shards
+                            if (enable && !center_content.IsNullOrDestroyed()) { InitializeShardsView(); }
                             //UpdateUI();
                         }
                     }
@@ -5752,6 +5847,8 @@ namespace LastEpoch_Hud.Scripts
                                     }
                                 }
                             }
+                            shard_initialized = false;
+                            if (enable && !center_content.IsNullOrDestroyed()) { InitializeShardsView(); }
                             UpdateUI();
                         }
                     }
@@ -6050,23 +6147,11 @@ public static void SetShardsView(int affix_number, bool seal)
                         wanted_name = shards_filter_name_tmp.text;
                     }
 
-                    bool item_idol = (item_type > 24 && item_type < 34);
-
                     if (affixList.singleAffixes != null)
                     {
                         foreach (AffixList.SingleAffix affix in affixList.singleAffixes)
                         {
-                            if (affix.IsNullOrDestroyed()) continue;
-
-                            bool affix_idol = affix.affixName != null && affix.affixName.Contains("Idol ");
-
-                            if (((item_idol && affix_idol) || (!item_idol && !affix_idol)) &&
-                                (!filter_by_name || (affix.affixName != null && affix.affixName.ToLower().Contains(wanted_name.ToLower()))) &&
-                                (!filter_by_type || (affix.type == wanted_type)) &&
-                                (!filter_by_class || (affix.classSpecificity == wanted_class)))
-                            {
-                                AddShardInView(affix.affixId, affix.affixName);
-                            }
+                            TryAddAffix(affix, filter_by_name, wanted_name, filter_by_type, wanted_type, filter_by_class, wanted_class);
                         }
                     }
 
@@ -6074,17 +6159,7 @@ public static void SetShardsView(int affix_number, bool seal)
                     {
                         foreach (AffixList.MultiAffix affix in affixList.multiAffixes)
                         {
-                            if (affix.IsNullOrDestroyed()) continue;
-
-                            bool affix_idol = affix.affixName != null && affix.affixName.Contains("Idol ");
-
-                            if (((item_idol && affix_idol) || (!item_idol && !affix_idol)) &&
-                                (!filter_by_name || (affix.affixName != null && affix.affixName.ToLower().Contains(wanted_name.ToLower()))) &&
-                                (!filter_by_type || (affix.type == wanted_type)) &&
-                                (!filter_by_class || (affix.classSpecificity == wanted_class)))
-                            {
-                                AddShardInView(affix.affixId, affix.affixName);
-                            }
+                            TryAddAffix(affix, filter_by_name, wanted_name, filter_by_type, wanted_type, filter_by_class, wanted_class);
                         }
                     }
 
@@ -6301,27 +6376,27 @@ public static void SetShardsView(int affix_number, bool seal)
                                 System.Collections.Generic.List<ItemAffix> new_affixes = new System.Collections.Generic.List<ItemAffix>();
                                 if (affix_0_id > -1)
                                 {
-                                    new_affixes.Add(MakeAffix(affix_0_id, (byte)affix_0_tier_slider.value, (byte)affix_0_value_slider.value, false));
+                                    new_affixes.Add(MakeAffix(affix_0_id, (byte)affix_0_tier_slider.value, ChosenRoll(affix_0_random_toggle, affix_0_value_slider), false));
                                 }
                                 if (affix_1_id > -1)
                                 {
-                                    new_affixes.Add(MakeAffix(affix_1_id, (byte)affix_1_tier_slider.value, (byte)affix_1_value_slider.value, false));
+                                    new_affixes.Add(MakeAffix(affix_1_id, (byte)affix_1_tier_slider.value, ChosenRoll(affix_1_random_toggle, affix_1_value_slider), false));
                                 }
                                 if (affix_2_id > -1)
                                 {
-                                    new_affixes.Add(MakeAffix(affix_2_id, (byte)affix_2_tier_slider.value, (byte)affix_2_value_slider.value, false));
+                                    new_affixes.Add(MakeAffix(affix_2_id, (byte)affix_2_tier_slider.value, ChosenRoll(affix_2_random_toggle, affix_2_value_slider), false));
                                 }
                                 if (affix_3_id > -1)
                                 {
-                                    new_affixes.Add(MakeAffix(affix_3_id, (byte)affix_3_tier_slider.value, (byte)affix_3_value_slider.value, false));
+                                    new_affixes.Add(MakeAffix(affix_3_id, (byte)affix_3_tier_slider.value, ChosenRoll(affix_3_random_toggle, affix_3_value_slider), false));
                                 }
                                 if (affix_4_id > -1)
                                 {
-                                    new_affixes.Add(MakeAffix(affix_4_id, (byte)affix_4_tier_slider.value, (byte)affix_4_value_slider.value, false));
+                                    new_affixes.Add(MakeAffix(affix_4_id, (byte)affix_4_tier_slider.value, ChosenRoll(affix_4_random_toggle, affix_4_value_slider), false));
                                 }
                                 if (affix_5_id > -1)
                                 {
-                                    new_affixes.Add(MakeAffix(affix_5_id, (byte)affix_5_tier_slider.value, (byte)affix_5_value_slider.value, false));
+                                    new_affixes.Add(MakeAffix(affix_5_id, (byte)affix_5_tier_slider.value, ChosenRoll(affix_5_random_toggle, affix_5_value_slider), false));
                                 }
                                 
                                 byte new_count = 0;
@@ -6415,6 +6490,8 @@ public static void SetShardsView(int affix_number, bool seal)
                                 }
                             }
                             item.RefreshIDAndValues(); //Refresh item for implicits and unique mods
+                            if ((item_type < 100) && (ra < 7)) { item.forgingPotential = fg; }
+                            if (!corrupted_toggle.IsNullOrDestroyed() && corrupted_toggle.isOn) { item.SetAsCorrupted(); }
                             
                             Refs_Manager.ground_item_manager.dropItemForPlayer(Refs_Manager.player_actor, item.TryCast<ItemData>(), Refs_Manager.player_actor.position(), false);
                         }
