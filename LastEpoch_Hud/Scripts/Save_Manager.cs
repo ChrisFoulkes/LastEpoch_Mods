@@ -68,7 +68,8 @@ namespace LastEpoch_Hud.Scripts
                 ModVersion = Main.mod_version,
                 KeyBinds =
                 {
-                    BankStashs = KeyCode.F3
+                    BankStashs = KeyCode.F3,
+                    DamageMeter = KeyCode.F7
                 },
                 modsNotInHud =
                 {
@@ -560,12 +561,19 @@ namespace LastEpoch_Hud.Scripts
                 public Factions Factions;
                 public Scenes Scenes;
                 public Skills Skills;
+                public DamageMeter DamageMeter;
+            }
+            public struct DamageMeter
+            {
+                public int DamageType;
+                public bool SeparateHitAndDot;
             }
             
             //KeyBinds
             public struct KeyBinds
             {
                 public UnityEngine.KeyCode BankStashs;
+                public UnityEngine.KeyCode DamageMeter;
             }
             //Options not in hud (you have to set in defaultconfig before build)
             public struct ModsNotInHud
