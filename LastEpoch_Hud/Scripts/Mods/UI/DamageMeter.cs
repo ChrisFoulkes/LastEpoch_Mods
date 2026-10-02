@@ -234,7 +234,9 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                     DontDestroyOnLoad(DamageMeter_obj);
                     DamageMeter_obj.active = false;
                     DamageMeter_obj.transform.SetParent(Refs_Manager.game_uibase.transform);
-                    DamageMeter_obj.AddComponent<UIMouseListener>(); //Block mouse
+                    UIMouseListener mouse_listener = DamageMeter_obj.AddComponent<UIMouseListener>(); //Block mouse clicks over the meter
+                    // Without this, the game treats the open meter as a panel that blocks world actions, so controller skills stop working.
+                    mouse_listener.allowWorldActions = true;
                     if (!DamageMeter_obj.IsNullOrDestroyed())
                     {
                         GameObject images = Functions.GetChild(DamageMeter_obj, "Images");
