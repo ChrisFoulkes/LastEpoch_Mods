@@ -19,7 +19,7 @@ namespace LastEpoch_Hud.Scripts.Mods.Items
         }
         void Update()
         {
-            if ((Scenes.IsGameScene()) && (!Save_Manager.instance.IsNullOrDestroyed()) && (!Refs_Manager.InventoryPanelUI.IsNullOrDestroyed()))
+            if ((Scenes.IsGameScene()) && (!Save_Manager.instance.IsNullOrDestroyed()) && (!Save_Manager.instance.data.IsNullOrDestroyed()))
             {
                 if (Save_Manager.instance.data.Items.Pickup.Enable_AutoStore_Timer)
                 {
@@ -30,9 +30,9 @@ namespace LastEpoch_Hud.Scripts.Mods.Items
                     }
                     if (running)
                     {
-                        if ((GetElapsedTime() > Save_Manager.instance.data.Items.Pickup.AutoStore_Timer) && (!Refs_Manager.InventoryPanelUI.IsNullOrDestroyed()))
+                        if (GetElapsedTime() > Save_Manager.instance.data.Items.Pickup.AutoStore_Timer)
                         {
-                            Refs_Manager.InventoryPanelUI.StoreMaterialsButtonPress();
+                            Items_AutoStore_OnPickup.StoreNow();
                             running = false;
                         }
                     }

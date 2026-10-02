@@ -1,6 +1,4 @@
 ﻿using HarmonyLib;
-using UnityEngine;
-using Il2Cpp;
 
 namespace LastEpoch_Hud.Scripts.Mods.Items
 {
@@ -19,13 +17,13 @@ namespace LastEpoch_Hud.Scripts.Mods.Items
             else { return false; }
         }
 
-        [HarmonyPatch(typeof(InventoryPanelUI), "OnEnable")]
-        public class InventoryPanelUI_OnEnable
+        [HarmonyPatch(typeof(Il2CppLE.UI.PanelSystem.InventoryPanel), "OnOpen")]
+        public class InventoryPanel_OnOpen
         {
             [HarmonyPostfix]
-            static void Postfix(ref InventoryPanelUI __instance)
+            static void Postfix()
             {
-                if (CanRun()) { __instance.StoreMaterialsButtonPress(); }
+                if (CanRun()) { Items_AutoStore_OnPickup.StoreNow(); }
             }
         }
     }
