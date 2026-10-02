@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using Il2Cpp;
+using Il2CppLE.AssetBundles;
 using Il2CppTMPro;
 using MelonLoader;
 using UnityEngine;
@@ -31,6 +32,21 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
         public static System.Collections.Generic.List<Ability> Abilities = new System.Collections.Generic.List<Ability>();
         public static System.Collections.Generic.List<Skill> Skills = new System.Collections.Generic.List<Skill>();
         public static float TotalDamageDeal = 0f;
+        public static float RecordedSeconds = 0f; //Game time spent recording since the first hit, pauses excluded
+        public static Text Title_Text = null;
+        public const int DamageType_Flat = 1;
+        public const int DamageType_Dps = 2;
+
+        public static float Dps(float damage)
+        {
+            return RecordedSeconds > 0f ? damage / RecordedSeconds : 0f;
+        }
+        public static string FormatNumber(float value)
+        {
+            if (value >= 1000000f) { return (value / 1000000f).ToString("0.00") + "M"; }
+            if (value >= 10000f) { return (value / 1000f).ToString("0.0") + "k"; }
+            return System.Convert.ToInt32(value).ToString();
+        }
 
         //Settings
         public static GameObject Settings_panel = null;
@@ -58,16 +74,20 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
         {
             instance = this;
             UI.Reset();
-            Refs_Manager.OnRefsReady += OnRefsReadyHandler;
         }
 
-        static void OnRefsReadyHandler()
+        static KeyCode ToggleKey()
         {
-            // Defer init until BottomScreenMenu is also populated
-            Refs_Manager.WhenReady(
-                () => !Refs_Manager.game_uibase.IsNullOrDestroyed()
-                   && !Refs_Manager.game_uibase.bottomScreenMenu.IsNullOrDestroyed(),
-                InitWithBottomScreen);
+            // Saves written before this bind existed load it as None.
+            KeyCode key = KeyCode.None;
+            if (!Save_Manager.instance.IsNullOrDestroyed()) { key = Save_Manager.instance.data.KeyBinds.DamageMeter; }
+            return key == KeyCode.None ? KeyCode.F7 : key;
+        }
+
+        static bool BottomScreenReady()
+        {
+            return !Refs_Manager.game_uibase.IsNullOrDestroyed()
+                && !Refs_Manager.game_uibase.bottomScreenMenu.IsNullOrDestroyed();
         }
 
         static void InitWithBottomScreen()
@@ -88,8 +108,34 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
             if (!UI.Initialized) { UI.Init(); }
         }
 
+        static Il2CppSystem.Collections.Generic.List<Summoned> PlayerSummons()
+        {
+            if (Refs_Manager.player_actor.IsNullOrDestroyed()) { return null; }
+            SummonTracker tracker = null;
+            if (!Refs_Manager.player_actor.TryGetExistingSummonTracker(out tracker) || tracker.IsNullOrDestroyed()) { return null; }
+            return tracker.summons;
+        }
+
+        static readonly System.Collections.Generic.Dictionary<string, LoadRef<Sprite>> ability_icons = new System.Collections.Generic.Dictionary<string, LoadRef<Sprite>>();
+        static Sprite AbilityIcon(Ability ability)
+        {
+            if (ability.IsNullOrDestroyed()) { return null; }
+            // The load ref is kept for the session so the sprite stays loaded while the meter shows it.
+            if (!ability_icons.TryGetValue(ability.abilityName, out LoadRef<Sprite> loadRef))
+            {
+                SoftRef<Sprite> softRef = ability.abilitySpriteSoftRef;
+                if (softRef == null || !softRef) { return null; }
+                loadRef = SoftRefExtensions.CreateLoadRef(softRef, "LastEpoch_Hud", 0);
+                if (loadRef == null) { return null; }
+                loadRef.BlockForLoad();
+                ability_icons[ability.abilityName] = loadRef;
+            }
+            return loadRef.AssetOrNull;
+        }
+
         void Update()
         {
+            if (Scenes.IsGameScene() && !UI.Initialized && BottomScreenReady()) { InitWithBottomScreen(); }
             if (!Assets.Loaded()) { return; }
             if (Scenes.IsGameScene())
             {
@@ -97,8 +143,9 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                 if (!MenuText.IsNullOrDestroyed()) { MenuText.text = "Damage Meter"; }
                 if (!DamageMeter_obj.IsNullOrDestroyed())
                 {
-                    if (Input.GetKeyDown(KeyCode.U)) { DamageMeter_obj.active = !DamageMeter_obj.active; }
+                    if (Input.GetKeyDown(ToggleKey())) { DamageMeter_obj.active = !DamageMeter_obj.active; }
                     if (!DamageMeter_obj.active) { On = false; }
+                    if (On && Skills.Count > 0) { RecordedSeconds += Time.deltaTime; }
                     if (On) { UI.Update(); }
                 }
                 if (!OnOff_Image.IsNullOrDestroyed())
@@ -163,6 +210,13 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                         }
                     }
                     loading = false;
+                    // Only managed statics reference these prefabs, so the scene-load
+                    // UnloadUnusedAssets pass would destroy them without this flag.
+                    foreach (GameObject prefab in new GameObject[] { DamageMeter_prefab, Skill_prefab, Details_TopContent_prefab, Details_BottomContent_prefab })
+                    {
+                        if (!prefab.IsNullOrDestroyed()) { prefab.hideFlags |= HideFlags.DontUnloadUnusedAsset; }
+                    }
+                    if (!Loaded()) { Main.logger_instance.Error("Damage Meter : damagemeter.prefab or skill.prefab not found in asset bundle"); }
                 }
             }
         }
@@ -206,6 +260,9 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                             GameObject title = Functions.GetChild(panel, "Title");
                             if (!title.IsNullOrDestroyed())
                             {
+                                GameObject title_name = Functions.GetChild(title, "Name");
+                                if (!title_name.IsNullOrDestroyed()) { Title_Text = title_name.GetComponent<Text>(); }
+
                                 GameObject on_off = Functions.GetChild(title, "OnOff");
                                 if (!on_off.IsNullOrDestroyed())
                                 {
@@ -246,8 +303,13 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                                     DamageType_Dropdown = dropdown.GetComponent<Dropdown>();
                                     if (!DamageType_Dropdown.IsNullOrDestroyed())
                                     {
+                                        //The prefab only ships Percent and Flat
+                                        if (DamageType_Dropdown.options.Count <= DamageType_Dps)
+                                        {
+                                            DamageType_Dropdown.options.Add(new Dropdown.OptionData("Damage per Second"));
+                                        }
                                         if ((Save_Manager.instance.data.DamageMeter.DamageType > 0) &&
-                                            (Save_Manager.instance.data.DamageMeter.DamageType < 2))
+                                            (Save_Manager.instance.data.DamageMeter.DamageType <= DamageType_Dps))
                                         {
                                             DamageType_Dropdown.value = Save_Manager.instance.data.DamageMeter.DamageType;
                                         }
@@ -343,8 +405,14 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                                     Events.Set(shop_btn, Events.ToggleVisibility_OnClick_Action);
                                     shop_btn.interactable = true;
 
+                                    // BottomScreenMenu.OnEnable still uses this CanvasGroup, so unlock it rather than destroying it.
                                     CanvasGroup canvasGroup = shop.GetComponent<CanvasGroup>();
-                                    if(!canvasGroup.IsNullOrDestroyed()) { Object.Destroy(canvasGroup); }
+                                    if (!canvasGroup.IsNullOrDestroyed())
+                                    {
+                                        canvasGroup.alpha = 1f;
+                                        canvasGroup.interactable = true;
+                                        canvasGroup.blocksRaycasts = true;
+                                    }
 
                                     GameObject text_obj = Functions.GetChild(shop, "TextMeshPro Text");
                                     if (!text_obj.IsNullOrDestroyed())
@@ -358,16 +426,17 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                     UI.Reset();
                     Initialized = true;
                     Initializing = false;
+                    Main.logger_instance.Msg("Damage Meter : UI initialized, toggle with " + ToggleKey() + " or the Shop button");
                 }
             }                        
-            public static void AddSkill(string ability_name, float damage, bool hit, bool crit, bool kill, float overkill, string target_name)
+            public static void AddSkill(string ability_name, float damage, bool hit, bool crit, bool kill, float overkill, string target_name, Sprite icon_override)
             {
                 if (!Skill_prefab.IsNullOrDestroyed())
                 {
                     GameObject skill_obj = Instantiate(Skill_prefab, Vector3.zero, Quaternion.identity);
                     skill_obj.active = false;
                     skill_obj.transform.SetParent(DamageMeter_content.transform);
-                    Sprite icon = GetIcon(ability_name);
+                    Sprite icon = icon_override.IsNullOrDestroyed() ? GetIcon(ability_name) : icon_override;
                     System.Collections.Generic.List<float> damages = new System.Collections.Generic.List<float>();
                     damages.Add(damage);
                     System.Collections.Generic.List<bool> hits = new System.Collections.Generic.List<bool>();
@@ -394,12 +463,24 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                     });
                 }
             }
+            public static void SetTitle()
+            {
+                if (Title_Text.IsNullOrDestroyed()) { return; }
+                if (RecordedSeconds <= 0f) { Title_Text.text = "DPS"; }
+                else
+                {
+                    System.TimeSpan elapsed = System.TimeSpan.FromSeconds(RecordedSeconds);
+                    Title_Text.text = "DPS " + FormatNumber(Dps(TotalDamageDeal)) + "  (" + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00") + ")";
+                }
+            }
             public static void Update()
             {
                 Current_Frame++;
                 if (Current_Frame >= Frames)
                 {
                     Current_Frame = 0;
+                    DamageDeal.FlushAilments();
+                    SetTitle();
                     /*bool Separate_Dot = false;
                     if (!SeparateDot_Toggle.IsNullOrDestroyed())
                     {
@@ -470,18 +551,16 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                                             Text text = text_obj.GetComponent<Text>();
                                             if (!text.IsNullOrDestroyed())
                                             {
-                                                bool Show_Percent = true;
-                                                if (!DamageType_Dropdown.IsNullOrDestroyed())
-                                                {
-                                                    if (DamageType_Dropdown.value == 1) { Show_Percent = false; }
-                                                }
+                                                int damage_type = 0;
+                                                if (!DamageType_Dropdown.IsNullOrDestroyed()) { damage_type = DamageType_Dropdown.value; }
 
-                                                if (Show_Percent)
+                                                if (damage_type == DamageType_Flat) { text.text = FormatNumber(damage); }
+                                                else if (damage_type == DamageType_Dps) { text.text = FormatNumber(Dps(damage)); }
+                                                else
                                                 {
                                                     float damage_percent = ((damage * 100) / TotalDamageDeal);
                                                     text.text = damage_percent.ToString("0.0") + " %";
                                                 }
-                                                else { text.text = System.Convert.ToInt32(damage).ToString(); }
                                             }
                                         }
                                     }
@@ -508,16 +587,14 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                     {
                         if (ab.abilityName == ability_name)
                         {
-                            if (!ab.abilitySprite.IsNullOrDestroyed())
-                            {
-                                result = ab.abilitySprite;
-                                break;
-                            }
+                            result = AbilityIcon(ab);
+                            if (!result.IsNullOrDestroyed()) { break; }
                         }
                     }
-                    if (result == null)
+                    var summons = PlayerSummons();
+                    if (result == null && summons != null)
                     {
-                        foreach (Summoned summoned in Refs_Manager.summon_tracker.summons) //Summon
+                        foreach (Summoned summoned in summons) //Summon
                         {
                             AbilityList abilitylist = summoned.gameObject.GetComponent<AbilityList>();
                             if (!abilitylist.IsNullOrDestroyed())
@@ -532,7 +609,7 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                                         {
                                             if (!creationReferences.thisAbility.IsNullOrDestroyed())
                                             {
-                                                result = creationReferences.thisAbility.abilitySprite;
+                                                result = AbilityIcon(creationReferences.thisAbility);
                                             }
                                         }
                                         break;
@@ -550,6 +627,9 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
             {
                 Skills = new System.Collections.Generic.List<Skill>();
                 TotalDamageDeal = 0f;
+                RecordedSeconds = 0f;
+                DamageDeal.ClearPending();
+                SetTitle();
                 if (!DamageMeter_content.IsNullOrDestroyed())
                 {
                     foreach (GameObject go in Functions.GetAllChild(DamageMeter_content)) { Object.Destroy(go); }
@@ -997,7 +1077,7 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
             public static readonly System.Action OnOff_OnClick_Action = new System.Action(OnOff_Click);
             public static void OnOff_Click()
             {
-                On = !On;                
+                On = !On;
             }
 
             public static readonly System.Action Reset_OnClick_Action = new System.Action(Reset_Click);
@@ -1078,32 +1158,153 @@ namespace LastEpoch_Hud.Scripts.Mods.UI
                         bool target_is_player = false;
                         if (__0.target == Refs_Manager.player_actor) { target_is_player = true; }
                         bool target_is_summon = false;
-                        foreach (Summoned summoned in Refs_Manager.summon_tracker.summons)
+                        var summons = PlayerSummons();
+                        if (summons != null)
                         {
-                            if (summoned.actor == __0.target) { target_is_summon = true; break; }
+                            foreach (Summoned summoned in summons)
+                            {
+                                if (summoned.actor == __0.target) { target_is_summon = true; break; }
+                            }
                         }
                         if ((!target_is_player) && (!target_is_summon))
                         {
-                            TotalDamageDeal += __0.damageDealt;
-                            bool found = false;
-                            foreach (Skill skill in Skills)
-                            {
-                                if ((skill.AbilityName == __0.ability.abilityName)) // && (skill.Dot == !__0.hit))
-                                {
-                                    found = true;
-                                    skill.Damages.Add(__0.damageDealt);
-                                    skill.Hits.Add(__0.hit);
-                                    skill.Crits.Add(__0.crit);
-                                    skill.Kills.Add(__0.kill);
-                                    skill.Overkills.Add(__0.overkill);
-                                    skill.TargetName.Add(__0.target.name);
-                                    break;
-                                }
-                            }
-                            if (!found) { UI.AddSkill(__0.ability.abilityName, __0.damageDealt, __0.hit, __0.crit, __0.kill, __0.overkill, __0.target.name); }
+                            Record(__0.ability.abilityName, __0.damageDealt, __0.hit, __0.crit, __0.kill, __0.overkill, __0.target.name, null);
                         }
                     }
                 }
+            }
+
+            static void Record(string name, float damage, bool hit, bool crit, bool kill, float overkill, string target_name, Sprite icon)
+            {
+                TotalDamageDeal += damage;
+                foreach (Skill skill in Skills)
+                {
+                    if (skill.AbilityName == name)
+                    {
+                        skill.Damages.Add(damage);
+                        skill.Hits.Add(hit);
+                        skill.Crits.Add(crit);
+                        skill.Kills.Add(kill);
+                        skill.Overkills.Add(overkill);
+                        skill.TargetName.Add(target_name);
+                        return;
+                    }
+                }
+                UI.AddSkill(name, damage, hit, crit, kill, overkill, target_name, icon);
+            }
+
+            static bool IsPlayerOrSummon(Actor actor)
+            {
+                if (actor.IsNullOrDestroyed()) { return false; }
+                if (actor == Refs_Manager.player_actor) { return true; }
+                var summons = PlayerSummons();
+                if (summons != null)
+                {
+                    foreach (Summoned summoned in summons)
+                    {
+                        if (summoned.actor == actor) { return true; }
+                    }
+                }
+                return false;
+            }
+
+            // Ailment ticks never raise DetailedAbilityEvent; they reach ProtectionClass.ApplyDamage with the
+            // ActiveAilment as their DamageSource. ApplyDamage's ValueTuple result does not marshal through the
+            // detour, so the amount is read from the BaseHealth.HealthDamage call it makes on the target.
+            // Ticks arrive every frame per target, so they are summed here and written to the rows by
+            // FlushAilments rather than stored one by one.
+            struct PendingAilment
+            {
+                public Ailment Ailment;
+                public float Damage;
+                public string TargetName;
+            }
+            static readonly System.Collections.Generic.Dictionary<string, PendingAilment> pending_ailments = new System.Collections.Generic.Dictionary<string, PendingAilment>();
+            static readonly System.Collections.Generic.Dictionary<string, LoadRef<Sprite>> ailment_icons = new System.Collections.Generic.Dictionary<string, LoadRef<Sprite>>();
+            static bool ailment_logged = false;
+            static Ailment current_ailment = null;
+            static BaseHealth current_target = null;
+
+            [HarmonyPatch(typeof(ProtectionClass), "ApplyDamage")]
+            public class ProtectionClass_ApplyDamage
+            {
+                [HarmonyPrefix]
+                static void Prefix(ProtectionClass __instance, DamageSource __1)
+                {
+                    current_ailment = null;
+                    current_target = null;
+                    if (!On || __1 == null || !Scenes.IsGameScene()) { return; }
+                    var info = __1.GetDamageSourceInfo();
+                    Ailment ailment = info.Item1;
+                    if (ailment.IsNullOrDestroyed()) { return; } //Hits are counted by DetailedAbilityEvent
+                    Actor target = __instance.actor;
+                    if (target.IsNullOrDestroyed() || !IsPlayerOrSummon(info.Item5) || IsPlayerOrSummon(target)) { return; }
+                    current_ailment = ailment;
+                    current_target = target.health;
+                }
+                [HarmonyPostfix]
+                static void Postfix()
+                {
+                    current_ailment = null;
+                    current_target = null;
+                }
+            }
+
+            [HarmonyPatch(typeof(BaseHealth), "HealthDamage")]
+            public class BaseHealth_HealthDamage
+            {
+                [HarmonyPrefix]
+                static void Prefix(BaseHealth __instance, float __0)
+                {
+                    if (current_ailment == null || __0 <= 0f || __instance != current_target) { return; }
+                    string name = AilmentName(current_ailment);
+                    if (!ailment_logged)
+                    {
+                        ailment_logged = true;
+                        Main.logger_instance.Msg("Damage Meter : first ailment tick " + name + " damage=" + __0);
+                    }
+                    pending_ailments.TryGetValue(name, out PendingAilment pending);
+                    pending.Ailment = current_ailment;
+                    pending.Damage += __0;
+                    pending.TargetName = __instance.gameObject.name;
+                    pending_ailments[name] = pending;
+                }
+            }
+
+            static string AilmentName(Ailment ailment)
+            {
+                string name = ailment.displayName;
+                if (string.IsNullOrEmpty(name)) { name = ailment.name; }
+                return name ?? "Ailment";
+            }
+
+            static Sprite AilmentIcon(string name, Ailment ailment)
+            {
+                if (!ailment_icons.TryGetValue(name, out LoadRef<Sprite> loadRef))
+                {
+                    SoftRef<Sprite> softRef = ailment.getIcon();
+                    if (softRef == null || !softRef) { return null; }
+                    loadRef = SoftRefExtensions.CreateLoadRef(softRef, "LastEpoch_Hud", 0);
+                    if (loadRef == null) { return null; }
+                    loadRef.BlockForLoad();
+                    ailment_icons[name] = loadRef;
+                }
+                return loadRef.AssetOrNull;
+            }
+
+            public static void FlushAilments()
+            {
+                if (pending_ailments.Count == 0) { return; }
+                foreach (var entry in pending_ailments)
+                {
+                    Record(entry.Key, entry.Value.Damage, false, false, false, 0f, entry.Value.TargetName, AilmentIcon(entry.Key, entry.Value.Ailment));
+                }
+                pending_ailments.Clear();
+            }
+
+            public static void ClearPending()
+            {
+                pending_ailments.Clear();
             }
         }
         public struct Skill

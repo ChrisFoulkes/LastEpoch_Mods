@@ -30,6 +30,7 @@ namespace LastEpoch_Hud.Scripts
         GameObject monoliths_complete_objectives_obj = null;
         GameObject bank_quad_obj = null;
         GameObject Cosmetics_offline_obj = null;
+        GameObject damage_meter_obj = null;
 
         bool initialized = false;
         bool enable = false;
@@ -128,6 +129,10 @@ namespace LastEpoch_Hud.Scripts
             Cosmetics_offline_obj = Object.Instantiate(new GameObject { name = "mod_cosmetics_offline" }, Vector3.zero, Quaternion.identity);
             Cosmetics_offline_obj.AddComponent<Mods.Cosmetics.Cosmetics_Offline>();
             Mods_Objects.Add(Cosmetics_offline_obj);
+
+            damage_meter_obj = Object.Instantiate(new GameObject { name = "mod_damage_meter" }, Vector3.zero, Quaternion.identity);
+            damage_meter_obj.AddComponent<Mods.UI.DamageMeter>();
+            Mods_Objects.Add(damage_meter_obj);
 
             foreach (GameObject mod in Mods_Objects) { Object.DontDestroyOnLoad(mod); }
             Mods_Objects.Clear();
